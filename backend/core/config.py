@@ -9,6 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEVELOPMENT_JWT_SECRET = "development-only-jwt-key-do-not-use-in-production"
 DEVELOPMENT_DEMO_PASSWORD = "development-demo-password-change-me"
+DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 PRODUCTION_ENVIRONMENTS = {"production", "staging"}
 
 
@@ -26,7 +27,10 @@ class Settings(BaseSettings):
     database_pool_size: int = Field(default=5, alias="DATABASE_POOL_SIZE")
     database_max_overflow: int = Field(default=10, alias="DATABASE_MAX_OVERFLOW")
     database_pool_recycle_seconds: int = Field(default=1800, alias="DATABASE_POOL_RECYCLE_SECONDS")
-    redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
+    redis_url: str = Field(default=DEFAULT_REDIS_URL, alias="REDIS_URL")
+    upstash_redis_url: Optional[str] = Field(default=None, alias="UPSTASH_REDIS_URL")
+    upstash_redis_rest_url: Optional[str] = Field(default=None, alias="UPSTASH_REDIS_REST_URL")
+    upstash_redis_rest_token: Optional[str] = Field(default=None, alias="UPSTASH_REDIS_REST_TOKEN")
 
     jwt_secret_key: str = Field(default=DEVELOPMENT_JWT_SECRET, alias="JWT_SECRET_KEY")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
@@ -154,6 +158,16 @@ class Settings(BaseSettings):
                 raise ValueError("DATA_MODE must be live in production")
         return self
 
+    def redis_connection_url(self) -> str | None:
+        if self.upstash_redis_url:
+            return self.upstash_redis_url
+        if self.upstash_rest_only_configured() and self.redis_url == DEFAULT_REDIS_URL:
+            return None
+        return self.redis_url
+
+    def upstash_rest_only_configured(self) -> bool:
+        return bool(self.upstash_redis_rest_url or self.upstash_redis_rest_token) and not self.upstash_redis_url
+
     def artifact_directories(self) -> dict[str, str]:
         """Return configured local storage directories used by workers and APIs."""
         return {
@@ -179,7 +193,9 @@ class Settings(BaseSettings):
             "api_version": self.api_version,
             "environment": self.environment,
             "database_configured": bool(self.database_url),
-            "redis_configured": bool(self.redis_url),
+            "redis_configured": bool(self.redis_connection_url() or self.upstash_redis_rest_url),
+            "redis_protocol_configured": bool(self.redis_connection_url()),
+            "upstash_redis_rest_configured": bool(self.upstash_redis_rest_url and self.upstash_redis_rest_token),
             "weather_api_configured": bool(self.weather_api_key or self.weather_api_base_url),
             "satellite_catalog_configured": bool((self.sentinel_enabled and (self.sentinel_catalog_url or self.sentinel_base_url)) or self.modis_hotspot_url or self.viirs_hotspot_url),
             "firms_configured": bool(self.firms_enabled and self.firms_map_key),

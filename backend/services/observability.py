@@ -257,9 +257,9 @@ class HealthCheckService:
 
     def cache(self) -> dict:
         try:
-            from backend.services.cache import CacheService
+            from backend.database.redis import redis_health
 
-            cache_health = CacheService().health()
+            cache_health = redis_health()
         except Exception:
             return {"component": "cache", "status": "degraded", "detail": "Cache health check failed"}
         return {"component": "cache", "status": cache_health["status"], "detail": cache_health}

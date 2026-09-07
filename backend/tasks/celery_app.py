@@ -6,7 +6,8 @@ except Exception:  # pragma: no cover
 from backend.core.config import get_settings
 
 settings = get_settings()
-celery_app = Celery("firesight", broker=settings.redis_url, backend=settings.redis_url) if Celery else None
+redis_broker_url = settings.redis_connection_url()
+celery_app = Celery("firesight", broker=redis_broker_url, backend=redis_broker_url) if Celery and redis_broker_url else None
 
 if celery_app:
     celery_app.conf.beat_schedule = {

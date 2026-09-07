@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.core.config import get_settings
 from backend.core.errors import AppError, app_error_handler, http_exception_handler, unhandled_exception_handler, validation_exception_handler
 from backend.core.logging import configure_logging, log_startup_event, request_logging_middleware
+from backend.database.redis import close_redis, current_redis_client, init_redis
 from backend.middleware.rate_limit import rate_limit_middleware
 from backend.middleware.request_security import replay_protection_middleware, request_size_limit_middleware
 from backend.middleware.security_headers import security_headers_middleware
@@ -19,6 +20,8 @@ settings_obj = get_settings()
 async def lifespan(application: FastAPI):
     configure_logging()
     settings_obj.ensure_artifact_directories()
+    await init_redis(settings_obj)
+    application.state.redis = current_redis_client()
     log_startup_event(
         "application_startup",
         app=settings_obj.app_name,
@@ -27,6 +30,8 @@ async def lifespan(application: FastAPI):
         api_version=settings_obj.api_version,
     )
     yield
+    await close_redis()
+    application.state.redis = None
     log_startup_event("application_shutdown", app=settings_obj.app_name, version="0.2.0")
 
 

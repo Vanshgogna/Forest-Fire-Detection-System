@@ -25,6 +25,11 @@ def database_health():
     return health.database()
 
 
+@router.get("/health/cache")
+def cache_health():
+    return health.cache()
+
+
 @router.get("/health/weather-api")
 def weather_api_health():
     return health.weather_api()

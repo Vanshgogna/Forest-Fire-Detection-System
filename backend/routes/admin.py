@@ -1,11 +1,9 @@
 from fastapi import APIRouter, Depends
 
 from backend.core.security import Principal, require_admin
-from backend.services.cache import CacheService
 from backend.services.observability import HealthCheckService, observability_registry
 
 router = APIRouter()
-cache = CacheService()
 health = HealthCheckService()
 
 
@@ -15,7 +13,7 @@ def system_health(_: Principal = Depends(require_admin)):
     return {
         "api": "ok",
         "database": "configured",
-        "cache": cache.health(),
+        "cache": component_health["components"]["cache"]["detail"],
         "components": component_health["components"],
         "overall_status": component_health["overall_status"],
         "metrics": observability_registry.application_metrics(),

@@ -40,6 +40,7 @@ def test_public_read_endpoints_are_available():
         "/api/monitoring/health",
         "/api/monitoring/health/backend",
         "/api/monitoring/health/database",
+        "/api/monitoring/health/cache",
         "/api/monitoring/health/weather-api",
         "/api/monitoring/health/satellite-pipeline",
         "/api/monitoring/health/prediction-engine",

@@ -23,7 +23,10 @@ class CacheService:
 
     def __init__(self):
         self.settings = get_settings()
-        self.client = redis.Redis.from_url(self.settings.redis_url, decode_responses=True) if redis else None
+        redis_url = self.settings.redis_connection_url()
+        if redis_url and not redis_url.startswith(("redis://", "rediss://", "unix://")):
+            redis_url = None
+        self.client = redis.Redis.from_url(redis_url, decode_responses=True) if redis and redis_url else None
 
     def get_json(self, key: str, *, include_expired: bool = False) -> Any | None:
         if self.client and not include_expired:
@@ -91,7 +94,8 @@ class CacheService:
 
     def health(self) -> dict:
         if not self.client:
-            return {"status": "disabled", "backend": "memoryless"}
+            reason = "redis_protocol_url_missing" if self.settings.upstash_rest_only_configured() else "redis_client_unavailable"
+            return {"status": "disabled", "backend": "memoryless", "reason": reason}
         try:
             self.client.ping()
             return {"status": "ok", "backend": "redis"}
