@@ -66,7 +66,7 @@ CI runs on pull requests, pushes to protected/integration branches, release bran
 
 ### Backend Job
 
-- Start PostgreSQL/PostGIS and Redis service containers.
+- Start PostgreSQL and Redis service containers.
 - Install backend dependencies.
 - Install CI-only quality tools: Ruff, Bandit, and pip-audit.
 - Lint with Ruff.
@@ -190,13 +190,13 @@ Deployment fails when any of these fail:
 - Branches: `develop` or `release/*`.
 - Deployment: shared testing environment through manual deploy or CI-gated deploy.
 - Data: representative non-production datasets.
-- Goal: integration testing with PostgreSQL/PostGIS, Redis, workers, and scheduler enabled.
+- Goal: integration testing with PostgreSQL, Redis, workers, and scheduler enabled.
 
 ### Production
 
 - Branch: `main`.
 - Deployment: CI-gated Vercel production deploy and Render production deploy.
-- Data: managed PostgreSQL/PostGIS, managed Redis, external object storage, provider secrets.
+- Data: managed PostgreSQL, managed Redis, external object storage, provider secrets.
 - Goal: stable operator-facing deployment with health checks and rollback plan.
 
 ## Rollback Strategy

@@ -86,17 +86,17 @@ FIRMS records do not expose one universal row ID across all products. FireSight 
 
 The database enforces uniqueness on `(provider, source_record_id)`. Running ingestion twice with the same FIRMS response updates retrieval/provenance metadata and does not create duplicate observations.
 
-## Database And PostGIS
+## Database Storage
 
-Migration `20260829_0003` adds FIRMS provenance fields to `fire_hotspots` and a PostGIS `geometry(Point, 4326)` column.
+Migration `20260829_0003` adds FIRMS provenance fields to `fire_hotspots`. Hotspot locations are stored with standard `latitude` and `longitude` columns.
 
-Geometry uses the standard WGS84 coordinate order:
+Coordinates use WGS84 decimal degrees:
 
 ```text
-POINT(longitude latitude)
+latitude, longitude
 ```
 
-A GIST index is created on `fire_hotspots.geometry`. Region/time and provider/source indexes support aggregation and deduplication.
+Region/time and provider/source indexes support aggregation and deduplication.
 
 ## Freshness
 

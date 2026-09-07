@@ -1,6 +1,6 @@
 # Database Schema
 
-The backend uses PostgreSQL with PostGIS enabled through Alembic migrations.
+The backend uses standard PostgreSQL through SQLAlchemy models and Alembic migrations. PostGIS is not required.
 
 All application tables include:
 
@@ -17,7 +17,7 @@ Core tables:
 - `weather_records`: timestamped weather observations and Fire Weather Index values.
 - `vegetation_records`: NDVI, NBR, vegetation health, cloud percentage, and satellite source.
 - `satellite_images`: Sentinel/MODIS/VIIRS-ready scene metadata, tiles, cloud percentage, and file references.
-- `fire_hotspots`: hotspot detections with source, confidence, severity, and coordinates.
+- `fire_hotspots`: hotspot detections with source, confidence, severity, latitude, and longitude.
 - `ai_predictions`: risk score, category, confidence, feature importance, explanation, and model version.
 - `alerts`: generated alert lifecycle from new to acknowledged to resolved.
 - `reports`: generated report metadata and export locations.

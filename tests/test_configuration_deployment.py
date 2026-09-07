@@ -125,10 +125,10 @@ def test_vercel_configuration_sets_frontend_security_headers():
     assert headers["X-Content-Type-Options"] == "nosniff"
 
 
-def test_docker_compose_declares_postgis_health_and_demo_login_env():
+def test_docker_compose_declares_postgres_health_and_demo_login_env():
     compose = (PROJECT_ROOT / "docker-compose.yml").read_text()
 
-    assert "image: postgis/postgis:" in compose
+    assert "image: postgres:16" in compose
     assert "condition: service_healthy" in compose
     assert compose.count("      DEMO_LOGIN_ENABLED:") == 3
     assert compose.count("      DEMO_LOGIN_EMAIL:") == 3

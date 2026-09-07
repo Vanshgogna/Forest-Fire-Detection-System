@@ -27,8 +27,6 @@ def upgrade():
     op.add_column("fire_hotspots", sa.Column("daynight", sa.String(8), nullable=True))
     op.add_column("fire_hotspots", sa.Column("quality_status", sa.String(40), nullable=False, server_default="UNAVAILABLE"))
     op.add_column("fire_hotspots", sa.Column("provenance_metadata", sa.JSON(), nullable=False, server_default="{}"))
-    op.execute("ALTER TABLE fire_hotspots ADD COLUMN IF NOT EXISTS geometry geometry(Point, 4326)")
-    op.execute("UPDATE fire_hotspots SET geometry = ST_SetSRID(ST_Point(longitude, latitude), 4326) WHERE geometry IS NULL")
     op.create_index("ix_fire_hotspots_provider", "fire_hotspots", ["provider"])
     op.create_index("ix_fire_hotspots_source_record_id", "fire_hotspots", ["source_record_id"])
     op.create_index("ix_fire_hotspots_retrieved_at", "fire_hotspots", ["retrieved_at"])
@@ -37,11 +35,9 @@ def upgrade():
     op.create_index("ix_fire_hotspots_quality_status", "fire_hotspots", ["quality_status"])
     op.create_index("ix_hotspots_provider_source_record", "fire_hotspots", ["provider", "source_record_id"])
     op.create_unique_constraint("uq_hotspots_provider_source_record", "fire_hotspots", ["provider", "source_record_id"])
-    op.execute("CREATE INDEX IF NOT EXISTS ix_fire_hotspots_geometry_gist ON fire_hotspots USING GIST (geometry)")
 
 
 def downgrade():
-    op.execute("DROP INDEX IF EXISTS ix_fire_hotspots_geometry_gist")
     op.drop_constraint("uq_hotspots_provider_source_record", "fire_hotspots", type_="unique")
     op.drop_index("ix_hotspots_provider_source_record", table_name="fire_hotspots")
     op.drop_index("ix_fire_hotspots_quality_status", table_name="fire_hotspots")
@@ -50,7 +46,6 @@ def downgrade():
     op.drop_index("ix_fire_hotspots_retrieved_at", table_name="fire_hotspots")
     op.drop_index("ix_fire_hotspots_source_record_id", table_name="fire_hotspots")
     op.drop_index("ix_fire_hotspots_provider", table_name="fire_hotspots")
-    op.execute("ALTER TABLE fire_hotspots DROP COLUMN IF EXISTS geometry")
     op.drop_column("fire_hotspots", "provenance_metadata")
     op.drop_column("fire_hotspots", "quality_status")
     op.drop_column("fire_hotspots", "daynight")

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import desc, func, text
+from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
 from backend.database.models import AIPrediction, Alert, FireHotspot, Region, SatelliteImage, VegetationRecord, WeatherRecord
@@ -199,11 +199,4 @@ class HotspotRepository(BaseRepository[FireHotspot]):
         )
         self.db.add(hotspot)
         self.db.flush()
-        if self.db.bind is not None and self.db.bind.dialect.name == "postgresql":
-            self.db.execute(
-                text("UPDATE fire_hotspots SET geometry = ST_SetSRID(ST_Point(:lon, :lat), 4326) WHERE id = :id"),
-                {"lon": record.longitude, "lat": record.latitude, "id": hotspot.id},
-            )
-        else:
-            hotspot.geometry = f"POINT({record.longitude} {record.latitude})"
         return hotspot, True

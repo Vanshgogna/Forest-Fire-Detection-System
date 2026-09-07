@@ -8,7 +8,7 @@ The backend is organized as a modular FastAPI environmental intelligence API. It
 - `schemas/` contains request and response contracts, pagination helpers, GeoJSON contracts, and domain validation.
 - `services/` contains domain logic for fire risk prediction, weather index calculation, reusable remote-sensing processing, GIS feature generation, alert evaluation, recommendations, Redis-backed caching, notification queue contracts, and report export orchestration.
 - `repositories/` provides SQLAlchemy access patterns for regions, weather, vegetation, predictions, hotspots, and alerts.
-- `database/` contains normalized SQLAlchemy models for PostgreSQL/PostGIS and Alembic migrations.
+- `database/` contains normalized SQLAlchemy models for PostgreSQL and Alembic migrations.
 - `ml/` contains feature engineering, Random Forest/XGBoost training contracts, model metrics, model serialization, and versioning metadata.
 - `tasks/` contains Celery jobs for scheduled predictions, satellite scene processing, weather updates, report generation, and model retraining.
 - `core/` contains environment configuration, JWT access/refresh tokens, password hashing, role checks, request logging, rate-limit configuration, and security dependencies.
@@ -29,7 +29,7 @@ Versioned aliases are available under `/api/v1/*` for client stability.
 ## Deployment Services
 
 - `api`: FastAPI application.
-- `postgres`: PostgreSQL with PostGIS.
+- `postgres`: standard PostgreSQL.
 - `redis`: cache, broker, and task result backend.
 - `worker`: Celery worker.
 - `scheduler`: Celery beat scheduler.

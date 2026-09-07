@@ -23,7 +23,7 @@ FireSight is organized as a staged environmental intelligence platform. This doc
 | M1 Platform Baseline | `0.1.0` | Frontend, backend, CI, docs, and mock-data contracts are usable | Complete |
 | M2 Data Pipeline Baseline | `0.2.0` | ETL supports source refresh policies, validation, quality reports, version manifests, and checkpoints | Complete in code, release pending |
 | M3 Live Data Pilot | `0.3.0` | At least one live weather provider and one live hotspot/satellite feed are connected behind existing interfaces | Pending |
-| M4 Production Beta | `0.8.0` | Managed PostgreSQL/PostGIS, Redis, object storage, observability, and restore validation are deployed | Pending |
+| M4 Production Beta | `0.8.0` | Managed PostgreSQL, Redis, object storage, observability, and restore validation are deployed | Pending |
 | M5 Public Stable | `1.0.0` | Real data integrations, tested rollback, security review, and operational runbooks are complete | Pending |
 
 ## Sprint Plan
@@ -63,7 +63,7 @@ Object storage
   -> model registry
   -> production backup strategy
 
-PostgreSQL/PostGIS + Redis
+PostgreSQL + Redis
   -> repository-backed APIs
   -> Celery scheduled jobs
   -> operational health checks
@@ -96,7 +96,7 @@ PostgreSQL/PostGIS + Redis
 - Frontend application shell, dashboard, GIS, weather, vegetation, prediction, alerts, analytics, reports, settings.
 - FastAPI backend, schemas, services, middleware, repositories, tasks, and deployment configuration.
 - Data engineering and remote-sensing contract layers.
-- CI workflow with PostgreSQL/PostGIS and Redis services.
+- CI workflow with PostgreSQL and Redis services.
 - Deployment and release automation for Vercel, Render, Docker, and future platform handoff.
 
 ### Pending Modules
@@ -110,7 +110,7 @@ PostgreSQL/PostGIS + Redis
 
 - Live provider integrations are blocked on provider credentials, rate-limit policy, and target geographic coverage.
 - Docker runtime validation is blocked on local Docker availability for this macOS machine.
-- Production deployment validation is blocked on managed PostgreSQL/PostGIS, Redis, object storage, and secrets.
+- Production deployment validation is blocked on managed PostgreSQL, Redis, object storage, and secrets.
 
 ### Future Enhancements
 

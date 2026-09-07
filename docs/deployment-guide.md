@@ -46,7 +46,7 @@ Services:
 
 - FastAPI API: `http://localhost:8000`
 - Nginx reverse proxy: `http://localhost:8080`
-- PostgreSQL/PostGIS: `localhost:5432`
+- PostgreSQL: `localhost:5432`
 - Redis: `localhost:6379`
 - Celery worker and scheduler
 
@@ -60,7 +60,7 @@ BASE_URL=http://localhost:8000 scripts/healthcheck.sh
 
 The repository includes `render.yaml`.
 
-1. Create managed PostgreSQL with PostGIS enabled.
+1. Create managed PostgreSQL.
 2. Create managed Redis.
 3. Create a Render Blueprint from `render.yaml`.
 4. Set `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET_KEY`, and `CORS_ORIGINS` in Render.
@@ -105,7 +105,7 @@ The workflow verifies:
 
 - Frontend dependency installation, smoke tests, type checking, and production build
 - Backend dependency installation, API/ML/GIS/config tests, and module compilation
-- PostgreSQL/PostGIS and Redis service readiness
+- PostgreSQL and Redis service readiness
 
 ## Release Checklist
 

@@ -4,7 +4,7 @@
 
 - Node.js 22 or compatible LTS
 - Python 3.12 for production parity, or Python 3.9-3.12 for local tests
-- PostgreSQL with PostGIS for persistent production data
+- PostgreSQL for persistent production data
 - Redis for cache and background jobs
 - Docker or a compatible runtime for the full local stack
 
@@ -42,7 +42,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-This starts FastAPI, PostgreSQL/PostGIS, Redis, Celery worker, Celery scheduler, and Nginx.
+This starts FastAPI, PostgreSQL, Redis, Celery worker, Celery scheduler, and Nginx.
 
 ## Verification
 

@@ -7,7 +7,7 @@ delay_seconds="${MIGRATION_RETRY_DELAY_SECONDS:-2}"
 
 until python -m alembic upgrade head; do
   if [ "$attempt" -ge "$max_attempts" ]; then
-    echo "Database migration failed after ${attempt} attempts. Check DATABASE_URL, PostGIS availability, and database network access." >&2
+    echo "Database migration failed after ${attempt} attempts. Check DATABASE_URL and database network access." >&2
     exit 1
   fi
   echo "Database migration attempt ${attempt} failed; retrying in ${delay_seconds}s..." >&2

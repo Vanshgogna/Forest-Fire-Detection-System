@@ -3,7 +3,7 @@
 ## Completed Areas
 
 - FastAPI backend with modular routes, services, repositories, schemas, middleware, tasks, and configuration.
-- PostgreSQL/PostGIS schema through SQLAlchemy models and Alembic migration.
+- PostgreSQL schema through SQLAlchemy models and Alembic migration.
 - JWT authentication, refresh tokens, password hashing, and role-based access control.
 - Dashboard, weather, vegetation, satellite, GIS, hotspot, prediction, alert, notification, analytics, report, user, settings, and admin APIs.
 - ML feature engineering, preprocessing, training contracts, prediction, batch prediction, confidence, explainability, recommendations, model persistence, and versioning support.
@@ -37,8 +37,8 @@
 | Performance controls | Passed | Pytest performance tests |
 | Python imports/compile | Passed | `py_compile` and `compileall` checks |
 | Docker runtime | Not locally verified | Docker unavailable on this macOS 12 machine |
-| Live PostgreSQL connection | Not locally verified | Requires running PostgreSQL/PostGIS service; schema and database contracts are verified by models/migrations/tests |
+| Live PostgreSQL connection | Not locally verified | Requires running PostgreSQL service; schema and database contracts are verified by models/migrations/tests |
 
 ## Completion Criteria
 
-The project is production-oriented and ready for handoff, with the caveat that real deployment still requires provisioning managed PostgreSQL/PostGIS, Redis, provider secrets, and live data integrations.
+The project is production-oriented and ready for handoff, with the caveat that real deployment still requires provisioning managed PostgreSQL, Redis, provider secrets, and live data integrations.

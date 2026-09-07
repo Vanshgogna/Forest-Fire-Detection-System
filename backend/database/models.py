@@ -1,26 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
-
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
-from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.types import UserDefinedType
 
 from backend.database.session import Base
-
-
-class Geometry(UserDefinedType):
-    cache_ok = True
-
-    def get_col_spec(self, **kw: Any) -> str:
-        return "geometry(Point,4326)"
-
-
-@compiles(Geometry, "sqlite")
-def _compile_geometry_sqlite(type_: Geometry, compiler: Any, **kw: Any) -> str:
-    return "TEXT"
 
 
 class TimestampMixin:
@@ -160,7 +144,6 @@ class FireHotspot(TimestampMixin, Base):
     detected_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     latitude: Mapped[float] = mapped_column(Float)
     longitude: Mapped[float] = mapped_column(Float)
-    geometry: Mapped[Any | None] = mapped_column(Geometry(), nullable=True)
     confidence: Mapped[float] = mapped_column(Float)
     severity: Mapped[str] = mapped_column(String(40), index=True)
     source: Mapped[str] = mapped_column(String(80), default="MODIS")

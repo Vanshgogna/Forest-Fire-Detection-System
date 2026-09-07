@@ -6,7 +6,7 @@ A production-oriented environmental intelligence platform for monitoring vegetat
 
 - FastAPI backend with modular routes, services, repositories, schemas, middleware, Celery tasks, and Alembic migrations
 - React, TypeScript, Vite frontend with dashboard, GIS, weather, vegetation, hotspot, prediction, alert, analytics, report, and settings pages
-- PostgreSQL/PostGIS schema, Redis cache hooks, JWT authentication, role-based access control, safe logging, and rate limiting
+- PostgreSQL schema, Redis cache hooks, JWT authentication, role-based access control, safe logging, and rate limiting
 - ML pipeline contracts for preprocessing, Random Forest/XGBoost training, prediction, batch prediction, confidence, explainability, model persistence, and retraining
 - GIS and remote-sensing pipeline contracts for Sentinel-2, MODIS, future VIIRS, NDVI, NBR, heatmaps, GeoJSON, tiling, caching, storage, and cleanup
 - Docker, Render, Vercel, CI, health checks, readiness checks, and production configuration validation
@@ -70,7 +70,7 @@ Full local stack:
 docker compose up --build
 ```
 
-This starts FastAPI, PostgreSQL/PostGIS, Redis, Celery worker, Celery scheduler, and Nginx. The current implementation keeps realistic mock data available for exploration while exposing production-ready contracts for database persistence, Redis-backed caching, dashboard aggregation, model training/versioning, satellite preprocessing, weather history analysis, alert lifecycle management, notification queues, report export jobs, and role-protected administration.
+This starts FastAPI, PostgreSQL, Redis, Celery worker, Celery scheduler, and Nginx. The current implementation keeps realistic mock data available for exploration while exposing production-ready contracts for database persistence, Redis-backed caching, dashboard aggregation, model training/versioning, satellite preprocessing, weather history analysis, alert lifecycle management, notification queues, report export jobs, and role-protected administration.
 
 Demo login:
 
@@ -86,4 +86,4 @@ npm run build
 .test-venv/bin/python -m pytest
 ```
 
-See `docs/testing-quality-assurance.md` for the full QA matrix. GitHub Actions runs frontend and backend verification with PostgreSQL/PostGIS and Redis service containers.
+See `docs/testing-quality-assurance.md` for the full QA matrix. GitHub Actions runs frontend and backend verification with PostgreSQL and Redis service containers.

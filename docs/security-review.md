@@ -28,7 +28,7 @@
 - Public read APIs for dashboard, weather, GIS, vegetation, hotspots, prediction, analytics, reports, and settings.
 - Authenticated APIs for users, notifications, admin, prediction jobs, model training, and alert lifecycle operations.
 - Future file upload and satellite ingestion surfaces.
-- Redis, PostgreSQL/PostGIS, Celery workers, and object storage integrations.
+- Redis, PostgreSQL, Celery workers, and object storage integrations.
 
 ## Dependency Security
 

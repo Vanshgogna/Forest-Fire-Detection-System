@@ -51,7 +51,7 @@ Exact backend production start paths found:
 
 Major risks:
 
-- Production database must be PostgreSQL with PostGIS support because `/backend/alembic/versions/20260726_0001_enterprise_backend_schema.py` runs `CREATE EXTENSION IF NOT EXISTS postgis`.
+- Production database must be standard PostgreSQL. Production startup still rejects localhost/default DB URLs, but migrations no longer require spatial extensions.
 - `/backend/core/config.py` rejects production startup if `DATABASE_URL` is localhost, `JWT_SECRET_KEY` is the development value/too short, `CORS_ORIGINS` includes localhost/wildcard, or `DATA_MODE` is not `live`.
 - `/backend/routes/auth.py` uses a hardcoded demo login identity and password hash source. This is not production user management.
 - Live predictions require weather, vegetation, and hotspot data. In `DATA_MODE=live`, missing Sentinel/FIRMS/database-backed data returns `status: unavailable` rather than producing fake live predictions.
@@ -82,8 +82,8 @@ Major risks:
 Database currently configured:
 
 - Default backend database: PostgreSQL via `postgresql+psycopg://...`, `/backend/core/config.py`.
-- Docker Compose database: `postgis/postgis:16-3.4`, `/docker-compose.yml`.
-- SQLite support: only partial/testing compatibility through the custom `Geometry` type compiler in `/backend/database/models.py`; no SQLite production config was found.
+- Docker Compose database: `postgres:16`, `/docker-compose.yml`.
+- SQLite support: test-only; production configuration remains PostgreSQL.
 
 Configuration files:
 
@@ -110,7 +110,7 @@ Region creation:
 
 Production database recommendation:
 
-- Use PostgreSQL with PostGIS enabled.
+- Use managed PostgreSQL.
 - Run Alembic migrations before serving traffic.
 - Add a small seed/init command for registry regions or invoke a safe backend management task that creates `Region` rows from `/backend/services/region_registry.py`.
 - Run provider ingestion after DB initialization: FIRMS ingestion, Sentinel acquisition, raster prep, quality mask, NDVI/NBR processing.
@@ -173,7 +173,7 @@ Backend required for production:
 
 - `ENVIRONMENT=production`
 - `DATA_MODE=live`
-- `DATABASE_URL=<managed-postgres-or-postgis-url>`
+- `DATABASE_URL=<managed-postgres-url>`
 - `REDIS_URL=<managed-redis-url>`
 - `JWT_SECRET_KEY=<long-random-secret>`
 - `CORS_ORIGINS=<https://frontend.example>`
@@ -314,7 +314,7 @@ No committed API keys were found in source files scanned outside `/.env`; test s
 
 ## 11. Exact Recommended Deployment Architecture
 
-Recommended: Vercel frontend + Render backend services + PostgreSQL/PostGIS + Redis.
+Recommended: Vercel frontend + Render backend services + PostgreSQL + Redis.
 
 Why:
 
@@ -322,13 +322,13 @@ Why:
 - `render.yaml` and `/scripts/deploy-backend-render.sh` are already tailored for Render Docker deployment.
 - Dockerfile installs GDAL/geospatial system libraries needed by Rasterio/GeoPandas. This is safer than a simple non-Docker Python host.
 - Worker and cron services are already represented in `render.yaml` for FIRMS/Sentinel scheduled jobs.
-- PostgreSQL/PostGIS is required by migration design and geospatial hotspot geometry.
+- Standard PostgreSQL is sufficient for database persistence; hotspot locations are stored as latitude and longitude.
 - Redis is used by Celery and cache configuration.
 
 Option evaluation:
 
-- Option 1, Vercel + Railway + PostgreSQL: viable, but no Railway config exists and PostGIS/GDAL/Celery scheduling would need more platform setup.
-- Option 2, Vercel + Render + PostgreSQL/PostGIS: best fit because config already exists.
+- Option 1, Vercel + Railway + PostgreSQL: viable, but no Railway config exists and GDAL/Celery scheduling would need more platform setup.
+- Option 2, Vercel + Render + PostgreSQL: best fit because config already exists.
 - Option 3, single platform: viable with Docker Compose on a VPS, but more operations burden and less aligned with current `vercel.json`/`render.yaml`.
 
 ## 12. Files That Must Be Changed Before Production
@@ -340,7 +340,7 @@ Minimum production-readiness changes:
 - `/backend/routes/auth.py`: replace hardcoded demo auth with database-backed users or explicitly disable auth-protected production features until real auth exists.
 - `/backend/core/config.py`: consider removing credential-looking localhost defaults for production builds; keep validation.
 - `/alembic.ini`: replace credential-looking default URL with placeholder or rely fully on env override.
-- `/render.yaml`: confirm PostGIS provisioning, externalize `PORT` if Render provides it, and decide whether worker/cron are required on first deploy.
+- `/render.yaml`: confirm PostgreSQL provisioning, externalize `PORT` if Render provides it, and decide whether worker/cron are required on first deploy.
 - `/scripts/deploy-backend-render.sh`: keep migration/start command; optionally add a registry seed/init step after migration.
 - Add a new seed/init module or script, likely under `/backend` or `/scripts`, to create configured regions from `/backend/services/region_registry.py`.
 - `/frontend/src/pages/MapPage.tsx` and/or `/frontend/src/components/maps/GeographicRiskIntelligence.tsx`: fix selected-region weather overlay staleness.
@@ -487,7 +487,7 @@ Score: 72 / 100.
 Reasons:
 
 - Strong: frontend builds, backend tests pass, Dockerfile exists, Render/Vercel configs exist, centralized settings, production validation, health endpoint, Alembic migrations, provider error handling.
-- Not ready yet: no verified managed PostGIS deployment, no production seed/init strategy, demo auth, local/ephemeral artifact assumptions, mixed real/fixture data, region source duplication between frontend and backend, no explicit Python version pin, no live browser console/CORS integration verification.
+- Not ready yet: no verified managed PostgreSQL deployment, no production seed/init strategy, demo auth, local/ephemeral artifact assumptions, mixed real/fixture data, region source duplication between frontend and backend, no explicit Python version pin, no live browser console/CORS integration verification.
 
 ## 19. Phase 1 Verification Commands Run
 

@@ -4,7 +4,7 @@ FireSight deploys with the existing architecture:
 
 - Backend API: Render Docker web service
 - Frontend: Vercel Vite app
-- Database: managed PostgreSQL/PostGIS
+- Database: managed PostgreSQL
 - Redis/Celery: optional for scheduled FIRMS/Sentinel ingestion jobs; not required for the API process to answer health, weather, prediction-unavailable, and alert-unavailable responses
 
 ## Required Environment
@@ -58,13 +58,7 @@ python -m alembic upgrade head
 The backend Docker image copies `alembic.ini`, and Alembic reads `DATABASE_URL` from runtime settings.
 Common platform URLs such as `postgres://...` and `postgresql://...` are normalized to the psycopg SQLAlchemy dialect used by the app.
 
-PostGIS must be available in the database. The first migration runs:
-
-```sql
-CREATE EXTENSION IF NOT EXISTS postgis;
-```
-
-The database user therefore needs permission to create the extension, or the platform database must already provide PostGIS.
+No PostGIS extension is required. Hotspot locations are stored with standard latitude and longitude columns, so managed PostgreSQL providers such as Supabase and Neon can run the schema without extension privileges.
 
 ## Render Backend
 

@@ -27,8 +27,6 @@ def create_timestamp_indexes(table_name: str):
 
 
 def upgrade():
-    op.execute("CREATE EXTENSION IF NOT EXISTS postgis")
-
     op.create_table(
         "users",
         sa.Column("id", sa.Integer(), primary_key=True),

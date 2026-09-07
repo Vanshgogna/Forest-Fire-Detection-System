@@ -58,4 +58,4 @@ All notable changes to FireSight are recorded here. The project follows Semantic
 
 ### Added
 
-- Initial production-oriented FireSight platform with React dashboard, FastAPI backend, PostgreSQL/PostGIS schema, Redis/Celery contracts, ML pipeline contracts, remote-sensing pipeline contracts, security middleware, CI, deployment scripts, and operational documentation.
+- Initial production-oriented FireSight platform with React dashboard, FastAPI backend, PostgreSQL schema, Redis/Celery contracts, ML pipeline contracts, remote-sensing pipeline contracts, security middleware, CI, deployment scripts, and operational documentation.

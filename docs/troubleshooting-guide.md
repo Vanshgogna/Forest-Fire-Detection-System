@@ -44,7 +44,7 @@ Check:
 
 - `DATABASE_URL`
 - PostgreSQL server is reachable
-- PostGIS extension is enabled
+- PostgreSQL database is reachable and migrations have been applied
 - Alembic migrations have been applied
 
 ```bash
