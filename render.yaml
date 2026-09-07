@@ -1,0 +1,163 @@
+services:
+  - type: web
+    name: firesight-api
+    env: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile.backend
+    dockerCommand: sh /app/scripts/deploy-backend-render.sh
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DATA_MODE
+        value: live
+      - key: PORT
+        value: "8000"
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: DEMO_LOGIN_ENABLED
+        value: "true"
+      - key: DEMO_LOGIN_EMAIL
+        sync: false
+      - key: DEMO_LOGIN_PASSWORD
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: CLOUDINARY_URL
+        sync: false
+      - key: WEATHER_API_BASE_URL
+        value: https://api.open-meteo.com/v1
+      - key: WEATHER_API_KEY
+        sync: false
+      - key: WEATHER_REQUEST_TIMEOUT
+        value: "8"
+      - key: FIRMS_ENABLED
+        value: "false"
+      - key: FIRMS_MAP_KEY
+        sync: false
+      - key: FIRMS_PRODUCT
+        value: VIIRS_SNPP_NRT
+      - key: FIRMS_LOOKBACK_HOURS
+        value: "24"
+      - key: FIRMS_REFRESH_INTERVAL_MINUTES
+        value: "180"
+      - key: COPERNICUS_CLIENT_ID
+        sync: false
+      - key: COPERNICUS_CLIENT_SECRET
+        sync: false
+      - key: SENTINEL_ENABLED
+        value: "false"
+      - key: SENTINEL_PROCESSING_DIR
+        value: /tmp/firesight/sentinel/processed
+      - key: SENTINEL_TEMP_DIR
+        value: /tmp/firesight/sentinel/tmp
+
+  - type: worker
+    name: firesight-worker
+    env: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile.backend
+    dockerCommand: celery -A backend.tasks.celery_app:celery_app worker --loglevel=INFO
+    autoDeploy: true
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DATA_MODE
+        value: live
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: DEMO_LOGIN_ENABLED
+        value: "true"
+      - key: DEMO_LOGIN_EMAIL
+        sync: false
+      - key: DEMO_LOGIN_PASSWORD
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: WEATHER_API_BASE_URL
+        value: https://api.open-meteo.com/v1
+      - key: WEATHER_API_KEY
+        sync: false
+      - key: WEATHER_REQUEST_TIMEOUT
+        value: "8"
+      - key: FIRMS_ENABLED
+        value: "false"
+      - key: FIRMS_MAP_KEY
+        sync: false
+      - key: FIRMS_PRODUCT
+        value: VIIRS_SNPP_NRT
+      - key: FIRMS_LOOKBACK_HOURS
+        value: "24"
+      - key: FIRMS_REFRESH_INTERVAL_MINUTES
+        value: "180"
+      - key: COPERNICUS_CLIENT_ID
+        sync: false
+      - key: COPERNICUS_CLIENT_SECRET
+        sync: false
+      - key: SENTINEL_ENABLED
+        value: "false"
+      - key: SENTINEL_PROCESSING_DIR
+        value: /tmp/firesight/sentinel/processed
+      - key: SENTINEL_TEMP_DIR
+        value: /tmp/firesight/sentinel/tmp
+
+  - type: cron
+    name: firesight-scheduled-jobs
+    env: docker
+    schedule: "*/30 * * * *"
+    dockerfilePath: ./Dockerfile.backend
+    dockerCommand: celery -A backend.tasks.celery_app:celery_app beat --loglevel=INFO
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DATA_MODE
+        value: live
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: DEMO_LOGIN_ENABLED
+        value: "true"
+      - key: DEMO_LOGIN_EMAIL
+        sync: false
+      - key: DEMO_LOGIN_PASSWORD
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: WEATHER_API_BASE_URL
+        value: https://api.open-meteo.com/v1
+      - key: WEATHER_API_KEY
+        sync: false
+      - key: WEATHER_REQUEST_TIMEOUT
+        value: "8"
+      - key: FIRMS_ENABLED
+        value: "false"
+      - key: FIRMS_MAP_KEY
+        sync: false
+      - key: FIRMS_PRODUCT
+        value: VIIRS_SNPP_NRT
+      - key: FIRMS_LOOKBACK_HOURS
+        value: "24"
+      - key: FIRMS_REFRESH_INTERVAL_MINUTES
+        value: "180"
+      - key: COPERNICUS_CLIENT_ID
+        sync: false
+      - key: COPERNICUS_CLIENT_SECRET
+        sync: false
+      - key: SENTINEL_ENABLED
+        value: "false"
+      - key: SENTINEL_PROCESSING_DIR
+        value: /tmp/firesight/sentinel/processed
+      - key: SENTINEL_TEMP_DIR
+        value: /tmp/firesight/sentinel/tmp

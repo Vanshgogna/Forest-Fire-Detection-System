@@ -1,0 +1,212 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8000:8000"
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-firesight}:${POSTGRES_PASSWORD:-firesight}@postgres:5432/${POSTGRES_DB:-firesight}
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
+      DEMO_LOGIN_ENABLED: ${DEMO_LOGIN_ENABLED:-true}
+      DEMO_LOGIN_EMAIL: ${DEMO_LOGIN_EMAIL:-officer@firesight.ai}
+      DEMO_LOGIN_PASSWORD: ${DEMO_LOGIN_PASSWORD:-development-demo-password-change-me}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      MODEL_ARTIFACT_DIR: /app/backend/artifacts/models
+      UPLOAD_DIR: /app/backend/artifacts/uploads
+      RASTER_ARTIFACT_DIR: /app/backend/artifacts/rasters
+      CACHE_ARTIFACT_DIR: /app/backend/artifacts/cache
+      REPORT_ARTIFACT_DIR: /app/backend/artifacts/reports
+      DATA_MODE: ${DATA_MODE:-live}
+      COPERNICUS_CLIENT_ID: ${COPERNICUS_CLIENT_ID:-}
+      COPERNICUS_CLIENT_SECRET: ${COPERNICUS_CLIENT_SECRET:-}
+      COPERNICUS_TOKEN_URL: ${COPERNICUS_TOKEN_URL:-https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token}
+      SENTINEL_ENABLED: ${SENTINEL_ENABLED:-false}
+      SENTINEL_BASE_URL: ${SENTINEL_BASE_URL:-https://catalogue.dataspace.copernicus.eu/odata/v1}
+      SENTINEL_CATALOG_URL: ${SENTINEL_CATALOG_URL:-}
+      SENTINEL_DOWNLOAD_URL: ${SENTINEL_DOWNLOAD_URL:-https://download.dataspace.copernicus.eu/odata/v1}
+      SENTINEL_PRODUCT_TYPE: ${SENTINEL_PRODUCT_TYPE:-S2MSI2A}
+      SENTINEL_LOOKBACK_DAYS: ${SENTINEL_LOOKBACK_DAYS:-14}
+      SENTINEL_MAX_CLOUD_COVER: ${SENTINEL_MAX_CLOUD_COVER:-40}
+      SENTINEL_REQUEST_TIMEOUT: ${SENTINEL_REQUEST_TIMEOUT:-30}
+      SENTINEL_MAX_SCENE_SIZE_MB: ${SENTINEL_MAX_SCENE_SIZE_MB:-512}
+      SENTINEL_TEMP_DIR: ${SENTINEL_TEMP_DIR:-/app/backend/artifacts/rasters/tmp/sentinel}
+      SENTINEL_RETRY_ATTEMPTS: ${SENTINEL_RETRY_ATTEMPTS:-2}
+      SENTINEL_RETRY_BACKOFF_SECONDS: ${SENTINEL_RETRY_BACKOFF_SECONDS:-1}
+      SENTINEL_REFRESH_INTERVAL_HOURS: ${SENTINEL_REFRESH_INTERVAL_HOURS:-24}
+      SENTINEL_ANALYSIS_RESOLUTION: ${SENTINEL_ANALYSIS_RESOLUTION:-20}
+      SENTINEL_RASTER_MAX_MEMORY_MB: ${SENTINEL_RASTER_MAX_MEMORY_MB:-256}
+      SENTINEL_PROCESSING_DIR: ${SENTINEL_PROCESSING_DIR:-/app/backend/artifacts/rasters/processed/sentinel}
+      SENTINEL_MIN_VALID_PIXEL_PERCENT: ${SENTINEL_MIN_VALID_PIXEL_PERCENT:-40}
+      SENTINEL_QUALITY_MASK_VERSION: ${SENTINEL_QUALITY_MASK_VERSION:-6D-2-v1}
+      SENTINEL_NDVI_PROCESSING_VERSION: ${SENTINEL_NDVI_PROCESSING_VERSION:-6D-3-v1}
+      FIRMS_MAP_KEY: ${FIRMS_MAP_KEY:-}
+      FIRMS_BASE_URL: ${FIRMS_BASE_URL:-https://firms.modaps.eosdis.nasa.gov/api}
+      FIRMS_ENABLED: ${FIRMS_ENABLED:-false}
+      FIRMS_PRODUCT: ${FIRMS_PRODUCT:-VIIRS_SNPP_NRT}
+      FIRMS_LOOKBACK_HOURS: ${FIRMS_LOOKBACK_HOURS:-24}
+      FIRMS_MAX_RECORDS: ${FIRMS_MAX_RECORDS:-500}
+      FIRMS_REQUEST_TIMEOUT: ${FIRMS_REQUEST_TIMEOUT:-10}
+      FIRMS_REGION_BUFFER_DEGREES: ${FIRMS_REGION_BUFFER_DEGREES:-0.5}
+      FIRMS_RETRY_ATTEMPTS: ${FIRMS_RETRY_ATTEMPTS:-2}
+      FIRMS_RETRY_BACKOFF_SECONDS: ${FIRMS_RETRY_BACKOFF_SECONDS:-0.5}
+      FIRMS_REFRESH_INTERVAL_MINUTES: ${FIRMS_REFRESH_INTERVAL_MINUTES:-180}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - backend-artifacts:/app/backend/artifacts
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: celery -A backend.tasks.celery_app:celery_app worker --loglevel=INFO
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-firesight}:${POSTGRES_PASSWORD:-firesight}@postgres:5432/${POSTGRES_DB:-firesight}
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
+      DEMO_LOGIN_ENABLED: ${DEMO_LOGIN_ENABLED:-true}
+      DEMO_LOGIN_EMAIL: ${DEMO_LOGIN_EMAIL:-officer@firesight.ai}
+      DEMO_LOGIN_PASSWORD: ${DEMO_LOGIN_PASSWORD:-development-demo-password-change-me}
+      MODEL_ARTIFACT_DIR: /app/backend/artifacts/models
+      UPLOAD_DIR: /app/backend/artifacts/uploads
+      RASTER_ARTIFACT_DIR: /app/backend/artifacts/rasters
+      CACHE_ARTIFACT_DIR: /app/backend/artifacts/cache
+      REPORT_ARTIFACT_DIR: /app/backend/artifacts/reports
+      DATA_MODE: ${DATA_MODE:-live}
+      COPERNICUS_CLIENT_ID: ${COPERNICUS_CLIENT_ID:-}
+      COPERNICUS_CLIENT_SECRET: ${COPERNICUS_CLIENT_SECRET:-}
+      COPERNICUS_TOKEN_URL: ${COPERNICUS_TOKEN_URL:-https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token}
+      SENTINEL_ENABLED: ${SENTINEL_ENABLED:-false}
+      SENTINEL_BASE_URL: ${SENTINEL_BASE_URL:-https://catalogue.dataspace.copernicus.eu/odata/v1}
+      SENTINEL_CATALOG_URL: ${SENTINEL_CATALOG_URL:-}
+      SENTINEL_DOWNLOAD_URL: ${SENTINEL_DOWNLOAD_URL:-https://download.dataspace.copernicus.eu/odata/v1}
+      SENTINEL_PRODUCT_TYPE: ${SENTINEL_PRODUCT_TYPE:-S2MSI2A}
+      SENTINEL_LOOKBACK_DAYS: ${SENTINEL_LOOKBACK_DAYS:-14}
+      SENTINEL_MAX_CLOUD_COVER: ${SENTINEL_MAX_CLOUD_COVER:-40}
+      SENTINEL_REQUEST_TIMEOUT: ${SENTINEL_REQUEST_TIMEOUT:-30}
+      SENTINEL_MAX_SCENE_SIZE_MB: ${SENTINEL_MAX_SCENE_SIZE_MB:-512}
+      SENTINEL_TEMP_DIR: ${SENTINEL_TEMP_DIR:-/app/backend/artifacts/rasters/tmp/sentinel}
+      SENTINEL_RETRY_ATTEMPTS: ${SENTINEL_RETRY_ATTEMPTS:-2}
+      SENTINEL_RETRY_BACKOFF_SECONDS: ${SENTINEL_RETRY_BACKOFF_SECONDS:-1}
+      SENTINEL_REFRESH_INTERVAL_HOURS: ${SENTINEL_REFRESH_INTERVAL_HOURS:-24}
+      SENTINEL_ANALYSIS_RESOLUTION: ${SENTINEL_ANALYSIS_RESOLUTION:-20}
+      SENTINEL_RASTER_MAX_MEMORY_MB: ${SENTINEL_RASTER_MAX_MEMORY_MB:-256}
+      SENTINEL_PROCESSING_DIR: ${SENTINEL_PROCESSING_DIR:-/app/backend/artifacts/rasters/processed/sentinel}
+      SENTINEL_MIN_VALID_PIXEL_PERCENT: ${SENTINEL_MIN_VALID_PIXEL_PERCENT:-40}
+      SENTINEL_QUALITY_MASK_VERSION: ${SENTINEL_QUALITY_MASK_VERSION:-6D-2-v1}
+      SENTINEL_NDVI_PROCESSING_VERSION: ${SENTINEL_NDVI_PROCESSING_VERSION:-6D-3-v1}
+      FIRMS_MAP_KEY: ${FIRMS_MAP_KEY:-}
+      FIRMS_BASE_URL: ${FIRMS_BASE_URL:-https://firms.modaps.eosdis.nasa.gov/api}
+      FIRMS_ENABLED: ${FIRMS_ENABLED:-false}
+      FIRMS_PRODUCT: ${FIRMS_PRODUCT:-VIIRS_SNPP_NRT}
+      FIRMS_LOOKBACK_HOURS: ${FIRMS_LOOKBACK_HOURS:-24}
+      FIRMS_MAX_RECORDS: ${FIRMS_MAX_RECORDS:-500}
+      FIRMS_REQUEST_TIMEOUT: ${FIRMS_REQUEST_TIMEOUT:-10}
+      FIRMS_REGION_BUFFER_DEGREES: ${FIRMS_REGION_BUFFER_DEGREES:-0.5}
+      FIRMS_RETRY_ATTEMPTS: ${FIRMS_RETRY_ATTEMPTS:-2}
+      FIRMS_RETRY_BACKOFF_SECONDS: ${FIRMS_RETRY_BACKOFF_SECONDS:-0.5}
+      FIRMS_REFRESH_INTERVAL_MINUTES: ${FIRMS_REFRESH_INTERVAL_MINUTES:-180}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: celery -A backend.tasks.celery_app:celery_app beat --loglevel=INFO
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-firesight}:${POSTGRES_PASSWORD:-firesight}@postgres:5432/${POSTGRES_DB:-firesight}
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
+      DEMO_LOGIN_ENABLED: ${DEMO_LOGIN_ENABLED:-true}
+      DEMO_LOGIN_EMAIL: ${DEMO_LOGIN_EMAIL:-officer@firesight.ai}
+      DEMO_LOGIN_PASSWORD: ${DEMO_LOGIN_PASSWORD:-development-demo-password-change-me}
+      MODEL_ARTIFACT_DIR: /app/backend/artifacts/models
+      UPLOAD_DIR: /app/backend/artifacts/uploads
+      RASTER_ARTIFACT_DIR: /app/backend/artifacts/rasters
+      CACHE_ARTIFACT_DIR: /app/backend/artifacts/cache
+      REPORT_ARTIFACT_DIR: /app/backend/artifacts/reports
+      DATA_MODE: ${DATA_MODE:-live}
+      COPERNICUS_CLIENT_ID: ${COPERNICUS_CLIENT_ID:-}
+      COPERNICUS_CLIENT_SECRET: ${COPERNICUS_CLIENT_SECRET:-}
+      COPERNICUS_TOKEN_URL: ${COPERNICUS_TOKEN_URL:-https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token}
+      SENTINEL_ENABLED: ${SENTINEL_ENABLED:-false}
+      SENTINEL_BASE_URL: ${SENTINEL_BASE_URL:-https://catalogue.dataspace.copernicus.eu/odata/v1}
+      SENTINEL_CATALOG_URL: ${SENTINEL_CATALOG_URL:-}
+      SENTINEL_DOWNLOAD_URL: ${SENTINEL_DOWNLOAD_URL:-https://download.dataspace.copernicus.eu/odata/v1}
+      SENTINEL_PRODUCT_TYPE: ${SENTINEL_PRODUCT_TYPE:-S2MSI2A}
+      SENTINEL_LOOKBACK_DAYS: ${SENTINEL_LOOKBACK_DAYS:-14}
+      SENTINEL_MAX_CLOUD_COVER: ${SENTINEL_MAX_CLOUD_COVER:-40}
+      SENTINEL_REQUEST_TIMEOUT: ${SENTINEL_REQUEST_TIMEOUT:-30}
+      SENTINEL_MAX_SCENE_SIZE_MB: ${SENTINEL_MAX_SCENE_SIZE_MB:-512}
+      SENTINEL_TEMP_DIR: ${SENTINEL_TEMP_DIR:-/app/backend/artifacts/rasters/tmp/sentinel}
+      SENTINEL_RETRY_ATTEMPTS: ${SENTINEL_RETRY_ATTEMPTS:-2}
+      SENTINEL_RETRY_BACKOFF_SECONDS: ${SENTINEL_RETRY_BACKOFF_SECONDS:-1}
+      SENTINEL_REFRESH_INTERVAL_HOURS: ${SENTINEL_REFRESH_INTERVAL_HOURS:-24}
+      SENTINEL_ANALYSIS_RESOLUTION: ${SENTINEL_ANALYSIS_RESOLUTION:-20}
+      SENTINEL_RASTER_MAX_MEMORY_MB: ${SENTINEL_RASTER_MAX_MEMORY_MB:-256}
+      SENTINEL_PROCESSING_DIR: ${SENTINEL_PROCESSING_DIR:-/app/backend/artifacts/rasters/processed/sentinel}
+      SENTINEL_MIN_VALID_PIXEL_PERCENT: ${SENTINEL_MIN_VALID_PIXEL_PERCENT:-40}
+      SENTINEL_QUALITY_MASK_VERSION: ${SENTINEL_QUALITY_MASK_VERSION:-6D-2-v1}
+      SENTINEL_NDVI_PROCESSING_VERSION: ${SENTINEL_NDVI_PROCESSING_VERSION:-6D-3-v1}
+      FIRMS_MAP_KEY: ${FIRMS_MAP_KEY:-}
+      FIRMS_BASE_URL: ${FIRMS_BASE_URL:-https://firms.modaps.eosdis.nasa.gov/api}
+      FIRMS_ENABLED: ${FIRMS_ENABLED:-false}
+      FIRMS_PRODUCT: ${FIRMS_PRODUCT:-VIIRS_SNPP_NRT}
+      FIRMS_LOOKBACK_HOURS: ${FIRMS_LOOKBACK_HOURS:-24}
+      FIRMS_MAX_RECORDS: ${FIRMS_MAX_RECORDS:-500}
+      FIRMS_REQUEST_TIMEOUT: ${FIRMS_REQUEST_TIMEOUT:-10}
+      FIRMS_REGION_BUFFER_DEGREES: ${FIRMS_REGION_BUFFER_DEGREES:-0.5}
+      FIRMS_RETRY_ATTEMPTS: ${FIRMS_RETRY_ATTEMPTS:-2}
+      FIRMS_RETRY_BACKOFF_SECONDS: ${FIRMS_RETRY_BACKOFF_SECONDS:-0.5}
+      FIRMS_REFRESH_INTERVAL_MINUTES: ${FIRMS_REFRESH_INTERVAL_MINUTES:-180}
+    depends_on:
+      redis:
+        condition: service_started
+      worker:
+        condition: service_started
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-firesight}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-firesight}
+      POSTGRES_DB: ${POSTGRES_DB:-firesight}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-firesight} -d $${POSTGRES_DB:-firesight}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+volumes:
+  postgres-data:
+  backend-artifacts:

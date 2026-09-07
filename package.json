@@ -1,0 +1,19 @@
+{
+  "name": "forest-fire-risk-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI-based forest fire risk prediction and early warning system using satellite imagery and weather data.",
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "preview": "npm --prefix frontend run preview",
+    "backend": "uvicorn backend.main:app --reload --host ${BACKEND_HOST:-0.0.0.0} --port ${PORT:-8000}",
+    "test": "npm --prefix frontend run test",
+    "test:backend": "python3 -m pytest",
+    "typecheck": "npm --prefix frontend run typecheck",
+    "verify": "npm run typecheck && npm test && python3 -m py_compile backend/main.py && npm run test:backend"
+  },
+  "workspaces": [
+    "frontend"
+  ]
+}
