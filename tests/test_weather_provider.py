@@ -116,6 +116,9 @@ def test_open_meteo_weather_is_requested_with_region_coordinates_and_units():
     assert payload["timestamp_analysis"]["timezone"] == "Asia/Kolkata"
     assert payload["timestamp_analysis"]["provider_local_time"].startswith("2026-08-29T10:45")
     assert "current" in requests[0].url.params
+    assert requests[0].url.params["current"] == "temperature_2m,relative_humidity_2m,wind_speed_10m,rain"
+    assert requests[0].url.params["hourly"] == "temperature_2m,relative_humidity_2m,wind_speed_10m,rain"
+    assert "daily" not in requests[0].url.params
     assert requests[0].url.params["temperature_unit"] == "celsius"
     assert requests[0].url.params["wind_speed_unit"] == "kmh"
     assert requests[0].url.params["precipitation_unit"] == "mm"
@@ -280,6 +283,57 @@ def test_weather_provider_429_without_cached_data_is_unavailable_and_not_retried
     assert "current" not in payload
     assert repeated["status"] == "unavailable"
     assert repeated["cache"]["status"] == "hit"
+    assert repeated["error"] == "RATE_LIMITED"
+
+
+def test_weather_provider_rate_limit_cooldown_blocks_provider_after_unavailable_cache_expires():
+    calls = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(429, json={"reason": "rate limited"})
+
+    provider = provider_with_transport(handler)
+    first = provider.weather_for_region("r1")
+    params = provider._params(provider.region_reference("r1"), forecast_days=3)
+    key = provider._cache_key(params)
+    expires_at, value = CacheService._memory_cache[key]
+    assert expires_at > time.time()
+    CacheService._memory_cache[key] = (time.time() - 1, value)
+
+    second = provider.weather_for_region("r1")
+
+    assert calls == 1
+    assert first["error"] == "RATE_LIMITED"
+    assert second["status"] == "unavailable"
+    assert second["error"] == "RATE_LIMITED"
+    assert second["cache"]["cooldown"] is True
+    assert "cooldown_expires_at" in second["cache"]
+
+
+def test_frontend_equivalent_same_region_paths_share_weather_cache():
+    calls = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json=open_meteo_payload(temperature=28.9, observed_at=current_provider_time()))
+
+    CacheService._memory_cache.clear()
+    direct_provider = provider_with_transport(handler)
+    prediction_provider = provider_with_transport(handler)
+    alert_provider = provider_with_transport(handler)
+
+    direct = direct_provider.weather_for_region("r1")
+    prediction = prediction_provider.weather_for_region("r1")
+    alert = alert_provider.weather_for_region("r1")
+
+    assert calls == 1
+    assert direct["cache"]["status"] == "miss"
+    assert prediction["cache"]["status"] == "hit"
+    assert alert["cache"]["status"] == "hit"
+    assert {direct["current"]["temperature"], prediction["current"]["temperature"], alert["current"]["temperature"]} == {28.9}
 
 
 def test_weather_provider_coalesces_simultaneous_same_region_requests():

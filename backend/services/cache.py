@@ -33,7 +33,9 @@ class CacheService:
             try:
                 value = self.client.get(key)
                 if value:
+                    logger.info("redis_cache_hit key=%s", key)
                     return json.loads(value)
+                logger.info("redis_cache_miss key=%s", key)
             except Exception as exc:
                 logger.warning("cache_read_failed key=%s error=%s", key, exc.__class__.__name__)
         entry = self._memory_cache.get(key)
@@ -51,6 +53,7 @@ class CacheService:
         if self.client:
             try:
                 self.client.setex(key, ttl_seconds, json.dumps(value, default=str))
+                logger.info("redis_cache_write key=%s ttl_seconds=%s", key, ttl_seconds)
                 return
             except Exception as exc:
                 logger.warning("cache_write_failed key=%s ttl_seconds=%s error=%s", key, ttl_seconds, exc.__class__.__name__)
@@ -61,6 +64,7 @@ class CacheService:
         if self.client:
             try:
                 acquired = self.client.set(key, token, nx=True, ex=ttl_seconds)
+                logger.info("redis_lock_%s key=%s ttl_seconds=%s", "acquired" if acquired else "busy", key, ttl_seconds)
                 return token if acquired else None
             except Exception as exc:
                 logger.warning("cache_lock_acquire_failed key=%s error=%s", key, exc.__class__.__name__)
@@ -77,6 +81,7 @@ class CacheService:
             return 0
             """
             self.client.eval(script, 1, key, token)
+            logger.info("redis_lock_released key=%s", key)
         except Exception as exc:
             logger.warning("cache_lock_release_failed key=%s error=%s", key, exc.__class__.__name__)
 

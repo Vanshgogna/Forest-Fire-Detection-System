@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import random
 import time
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from threading import Lock
 from typing import Any
 from urllib.parse import urljoin
@@ -33,39 +35,15 @@ from backend.services.weather_engine import WeatherEngine
 
 CURRENT_VARIABLES = [
     "temperature_2m",
-    "apparent_temperature",
     "relative_humidity_2m",
     "wind_speed_10m",
-    "wind_direction_10m",
-    "wind_gusts_10m",
-    "precipitation",
     "rain",
-    "surface_pressure",
-    "cloud_cover",
 ]
 HOURLY_VARIABLES = [
     "temperature_2m",
-    "apparent_temperature",
     "relative_humidity_2m",
     "wind_speed_10m",
-    "wind_direction_10m",
-    "wind_gusts_10m",
-    "precipitation",
     "rain",
-    "surface_pressure",
-    "cloud_cover",
-    "uv_index",
-]
-DAILY_VARIABLES = [
-    "temperature_2m_max",
-    "temperature_2m_min",
-    "apparent_temperature_max",
-    "precipitation_sum",
-    "rain_sum",
-    "wind_speed_10m_max",
-    "wind_gusts_10m_max",
-    "wind_direction_10m_dominant",
-    "uv_index_max",
 ]
 logger = logging.getLogger("firesight.weather")
 TRANSIENT_PROVIDER_ERRORS = {
@@ -82,6 +60,7 @@ RETRY_BACKOFF_SECONDS = 0.15
 RATE_LIMIT_COOLDOWN_SECONDS = 60
 TRANSIENT_ERROR_COOLDOWN_SECONDS = 30
 MAX_ERROR_CACHE_SECONDS = 600
+MAX_RATE_LIMIT_COOLDOWN_SECONDS = 3600
 COALESCED_WAIT_SECONDS = 10.0
 COALESCED_POLL_SECONDS = 0.1
 
@@ -129,18 +108,45 @@ class OpenMeteoWeatherProvider:
         retrieved_at = datetime.now(timezone.utc).isoformat()
         cached = self.cache.get_json(cache_key)
         if cached:
+            logger.info(
+                "weather_cache_hit provider=%s region_id=%s cache_key=%s",
+                self.provider,
+                location.get("region_id"),
+                cache_key,
+            )
             payload = self._with_cache_metadata(cached, retrieved_at, cache_hit=True)
             provider_operation_completed(metadata, started, DataQualityStatus(payload["data_status"]), record_count=1)
             return payload
+        logger.info(
+            "weather_cache_miss provider=%s region_id=%s cache_key=%s",
+            self.provider,
+            location.get("region_id"),
+            cache_key,
+        )
+
+        cooldown = self._cooldown_payload(cache_key, location, params, retrieved_at)
+        if cooldown:
+            provider_operation_completed(metadata, started, DataQualityStatus(cooldown["data_status"]), error_kind=ProviderErrorKind.RATE_LIMITED)
+            return cooldown
 
         lock = self._local_lock(cache_key)
         with lock:
             retrieved_at = datetime.now(timezone.utc).isoformat()
             cached = self.cache.get_json(cache_key)
             if cached:
+                logger.info(
+                    "weather_cache_hit provider=%s region_id=%s cache_key=%s after_local_lock=true",
+                    self.provider,
+                    location.get("region_id"),
+                    cache_key,
+                )
                 payload = self._with_cache_metadata(cached, retrieved_at, cache_hit=True)
                 provider_operation_completed(metadata, started, DataQualityStatus(payload["data_status"]), record_count=1)
                 return payload
+            cooldown = self._cooldown_payload(cache_key, location, params, retrieved_at)
+            if cooldown:
+                provider_operation_completed(metadata, started, DataQualityStatus(cooldown["data_status"]), error_kind=ProviderErrorKind.RATE_LIMITED)
+                return cooldown
             payload, error_kind = self._refresh_weather_cache(cache_key, location, params, retrieved_at)
             provider_operation_completed(
                 metadata,
@@ -161,14 +167,31 @@ class OpenMeteoWeatherProvider:
         lock_key = self._refresh_lock_key(cache_key)
         token = self.cache.acquire_lock(lock_key, ttl_seconds=self._refresh_lock_ttl_seconds())
         if token:
+            logger.info(
+                "weather_redis_lock_acquired provider=%s region_id=%s cache_key=%s lock_key=%s",
+                self.provider,
+                location.get("region_id"),
+                cache_key,
+                lock_key,
+            )
             try:
                 cached = self.cache.get_json(cache_key)
                 if cached:
                     return self._with_cache_metadata(cached, retrieved_at, cache_hit=True), None
+                cooldown = self._cooldown_payload(cache_key, location, params, retrieved_at)
+                if cooldown:
+                    return cooldown, ProviderErrorKind.RATE_LIMITED
                 return self._fetch_and_cache(cache_key, location, params, retrieved_at)
             finally:
                 self.cache.release_lock(lock_key, token)
 
+        logger.info(
+            "weather_redis_lock_waiting provider=%s region_id=%s cache_key=%s lock_key=%s",
+            self.provider,
+            location.get("region_id"),
+            cache_key,
+            lock_key,
+        )
         coalesced = self._wait_for_coalesced_cache(cache_key, retrieved_at)
         if coalesced:
             return coalesced, None
@@ -202,6 +225,8 @@ class OpenMeteoWeatherProvider:
             if fallback:
                 return fallback, error_kind
             unavailable = self._unavailable_payload(location, retrieved_at, params, error_kind)
+            if error_kind == ProviderErrorKind.RATE_LIMITED:
+                self._store_rate_limit_cooldown(cache_key, location, exc)
             self._cache_transient_unavailable(cache_key, unavailable, error_kind, exc)
             return unavailable, error_kind
 
@@ -312,14 +337,25 @@ class OpenMeteoWeatherProvider:
             "forecast_days": max(1, min(forecast_days, 7)),
             "current": ",".join(CURRENT_VARIABLES),
             "hourly": ",".join(HOURLY_VARIABLES),
-            "daily": ",".join(DAILY_VARIABLES),
         }
         if self.settings.weather_api_key:
             params["apikey"] = self.settings.weather_api_key
         return params
 
     def _cache_key(self, params: dict[str, Any]) -> str:
-        encoded = "|".join(f"{key}={params[key]}" for key in sorted(params) if key != "apikey")
+        cache_dimensions = {
+            key: params[key]
+            for key in (
+                "latitude",
+                "longitude",
+                "timezone",
+                "temperature_unit",
+                "wind_speed_unit",
+                "precipitation_unit",
+                "forecast_days",
+            )
+        }
+        encoded = "|".join(f"{key}={cache_dimensions[key]}" for key in sorted(cache_dimensions))
         return "weather:open-meteo:" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
     def _fallback_cache_key(self, cache_key: str) -> str:
@@ -327,6 +363,10 @@ class OpenMeteoWeatherProvider:
 
     def _refresh_lock_key(self, cache_key: str) -> str:
         return f"{cache_key}:refresh-lock"
+
+    def _cooldown_cache_key(self, location: dict[str, Any]) -> str:
+        region_id = location.get("region_id") or "unknown"
+        return f"weather:open-meteo:{region_id}:cooldown"
 
     def _local_lock(self, cache_key: str) -> Lock:
         with self._local_locks_guard:
@@ -347,6 +387,37 @@ class OpenMeteoWeatherProvider:
     def _cached_fallback_candidate(self, cache_key: str) -> dict[str, Any] | None:
         return self.cache.get_json(self._fallback_cache_key(cache_key)) or self.cache.get_json(cache_key, include_expired=True)
 
+    def _cooldown_state(self, location: dict[str, Any]) -> dict[str, Any] | None:
+        return self.cache.get_json(self._cooldown_cache_key(location))
+
+    def _cooldown_payload(
+        self,
+        cache_key: str,
+        location: dict[str, Any],
+        params: dict[str, Any],
+        retrieved_at: str,
+    ) -> dict[str, Any] | None:
+        cooldown = self._cooldown_state(location)
+        if not cooldown:
+            return None
+        logger.warning(
+            "weather_rate_limit_cooldown_active provider=%s region_id=%s cache_key=%s cooldown_expires_at=%s",
+            self.provider,
+            location.get("region_id"),
+            cache_key,
+            cooldown.get("expires_at"),
+        )
+        fallback = self._cached_fallback_payload(self._cached_fallback_candidate(cache_key), retrieved_at, ProviderErrorKind.RATE_LIMITED)
+        if fallback:
+            fallback["cache"]["cooldown"] = True
+            fallback["cache"]["cooldown_expires_at"] = cooldown.get("expires_at")
+            return fallback
+        payload = self._unavailable_payload(location, retrieved_at, params, ProviderErrorKind.RATE_LIMITED)
+        payload["message"] = "Live weather provider is rate limited; retry is paused until the cooldown expires."
+        payload["cache"]["cooldown"] = True
+        payload["cache"]["cooldown_expires_at"] = cooldown.get("expires_at")
+        return payload
+
     def _wait_for_coalesced_cache(self, cache_key: str, retrieved_at: str) -> dict[str, Any] | None:
         deadline = time.monotonic() + COALESCED_WAIT_SECONDS
         while time.monotonic() < deadline:
@@ -363,7 +434,23 @@ class OpenMeteoWeatherProvider:
         last_error: Exception | None = None
         for attempt in range(MAX_PROVIDER_ATTEMPTS):
             try:
+                logger.info(
+                    "weather_open_meteo_request provider=%s url=%s attempt=%s forecast_days=%s current_fields=%s hourly_fields=%s",
+                    self.provider,
+                    self._forecast_url(),
+                    attempt + 1,
+                    params.get("forecast_days"),
+                    params.get("current"),
+                    params.get("hourly"),
+                )
                 response = self.client.get(self._forecast_url(), params=params, timeout=self.settings.weather_request_timeout)
+                if response.status_code == 429:
+                    logger.warning(
+                        "weather_open_meteo_429_response provider=%s attempt=%s retry_after=%s",
+                        self.provider,
+                        attempt + 1,
+                        response.headers.get("retry-after"),
+                    )
                 response.raise_for_status()
                 return response.json()
             except Exception as exc:
@@ -372,8 +459,21 @@ class OpenMeteoWeatherProvider:
                 error_kind = classify_provider_error(exc, status_code)
                 if error_kind not in RETRIABLE_PROVIDER_ERRORS or attempt == MAX_PROVIDER_ATTEMPTS - 1:
                     raise
-                time.sleep(RETRY_BACKOFF_SECONDS)
+                delay = self._retry_backoff_seconds(attempt)
+                logger.warning(
+                    "weather_open_meteo_retry provider=%s attempt=%s next_delay_seconds=%s error_kind=%s",
+                    self.provider,
+                    attempt + 1,
+                    round(delay, 3),
+                    error_kind.value,
+                )
+                time.sleep(delay)
         raise last_error or WeatherProviderError("Open-Meteo request failed")
+
+    def _retry_backoff_seconds(self, attempt: int) -> float:
+        base = RETRY_BACKOFF_SECONDS * (2 ** attempt)
+        jitter = random.uniform(0, RETRY_BACKOFF_SECONDS)
+        return min(2.0, base + jitter)
 
     def _cached_fallback_payload(self, cached: dict[str, Any] | None, retrieved_at: str, error_kind: ProviderErrorKind) -> dict[str, Any] | None:
         if error_kind not in TRANSIENT_PROVIDER_ERRORS or not cached:
@@ -391,19 +491,60 @@ class OpenMeteoWeatherProvider:
         payload["cache"]["fallback"] = True
         payload["provenance"]["quality_status"] = payload["data_status"]
         payload.setdefault("quality", {})["status"] = payload["data_status"]
+        logger.warning(
+            "weather_stale_fallback_used provider=%s region_id=%s error_kind=%s data_status=%s cache_age_seconds=%s",
+            self.provider,
+            payload.get("location", {}).get("region_id"),
+            error_kind.value,
+            payload["data_status"],
+            payload.get("cache", {}).get("age_seconds"),
+        )
         return payload
 
     def _cache_transient_unavailable(self, cache_key: str, payload: dict[str, Any], error_kind: ProviderErrorKind, exc: Exception) -> None:
         if error_kind not in TRANSIENT_PROVIDER_ERRORS:
             return
-        self.cache.set_json(cache_key, payload, ttl_seconds=self._transient_error_cache_ttl_seconds(error_kind, exc))
+        ttl_seconds = self._transient_error_cache_ttl_seconds(error_kind, exc)
+        self.cache.set_json(cache_key, payload, ttl_seconds=ttl_seconds)
+        logger.info(
+            "weather_transient_unavailable_cached provider=%s cache_key=%s error_kind=%s ttl_seconds=%s",
+            self.provider,
+            cache_key,
+            error_kind.value,
+            ttl_seconds,
+        )
+
+    def _store_rate_limit_cooldown(self, cache_key: str, location: dict[str, Any], exc: Exception) -> None:
+        ttl_seconds = self._rate_limit_cooldown_seconds(exc)
+        retrieved_at = datetime.now(timezone.utc)
+        expires_at = retrieved_at + timedelta(seconds=ttl_seconds)
+        payload = {
+            "provider": self.provider,
+            "region_id": location.get("region_id"),
+            "error": ProviderErrorKind.RATE_LIMITED.value,
+            "cache_key": cache_key,
+            "started_at": retrieved_at.isoformat(),
+            "expires_at": expires_at.isoformat(),
+            "ttl_seconds": ttl_seconds,
+        }
+        self.cache.set_json(self._cooldown_cache_key(location), payload, ttl_seconds=ttl_seconds)
+        logger.warning(
+            "weather_open_meteo_429 provider=%s region_id=%s cache_key=%s cooldown_seconds=%s",
+            self.provider,
+            location.get("region_id"),
+            cache_key,
+            ttl_seconds,
+        )
+
+    def _rate_limit_cooldown_seconds(self, exc: Exception) -> int:
+        retry_after = self._retry_after_seconds(exc)
+        if retry_after is not None:
+            return max(1, min(retry_after, MAX_RATE_LIMIT_COOLDOWN_SECONDS))
+        return RATE_LIMIT_COOLDOWN_SECONDS
 
     def _transient_error_cache_ttl_seconds(self, error_kind: ProviderErrorKind, exc: Exception) -> int:
         if error_kind == ProviderErrorKind.RATE_LIMITED:
-            retry_after = self._retry_after_seconds(exc)
-            if retry_after is not None:
-                return max(1, min(retry_after, MAX_ERROR_CACHE_SECONDS))
-            return RATE_LIMIT_COOLDOWN_SECONDS
+            return min(self._rate_limit_cooldown_seconds(exc), MAX_ERROR_CACHE_SECONDS)
         return TRANSIENT_ERROR_COOLDOWN_SECONDS
 
     def _retry_after_seconds(self, exc: Exception) -> int | None:
@@ -414,7 +555,13 @@ class OpenMeteoWeatherProvider:
         try:
             return int(float(retry_after))
         except ValueError:
-            return None
+            try:
+                retry_at = parsedate_to_datetime(retry_after)
+            except (TypeError, ValueError):
+                return None
+            if retry_at.tzinfo is None:
+                retry_at = retry_at.replace(tzinfo=timezone.utc)
+            return max(1, int((retry_at.astimezone(timezone.utc) - datetime.now(timezone.utc)).total_seconds()))
 
     def _unavailable_payload(
         self,
@@ -459,8 +606,6 @@ class OpenMeteoWeatherProvider:
             "humidity": current_units.get("relative_humidity_2m", CANONICAL_UNITS["humidity"]),
             "wind_speed": current_units.get("wind_speed_10m", CANONICAL_UNITS["wind_speed"]),
             "rainfall": current_units.get("rain", CANONICAL_UNITS["rainfall"]),
-            "pressure": current_units.get("surface_pressure", CANONICAL_UNITS["pressure"]),
-            "cloud_cover": current_units.get("cloud_cover", CANONICAL_UNITS["cloud_cover"]),
         }
         quality_flags = self._quality_flags(current_record, location, timestamp_analysis, units)
         data_status = self._data_status(quality_flags, timestamp_analysis["observation_age_minutes"], cache_hit=False)
@@ -517,15 +662,15 @@ class OpenMeteoWeatherProvider:
     def _current_record(self, current: dict[str, Any]) -> dict[str, Any]:
         return {
             "temperature": self._number(current.get("temperature_2m")),
-            "apparent_temperature": self._number(current.get("apparent_temperature")),
+            "apparent_temperature": self._optional_number(current.get("apparent_temperature")),
             "humidity": self._number(current.get("relative_humidity_2m")),
             "wind_speed": self._number(current.get("wind_speed_10m")),
-            "wind_direction": self._number(current.get("wind_direction_10m")),
-            "wind_gusts": self._number(current.get("wind_gusts_10m")),
+            "wind_direction": self._optional_number(current.get("wind_direction_10m")),
+            "wind_gusts": self._optional_number(current.get("wind_gusts_10m")),
             "rainfall": self._number(current.get("rain", current.get("precipitation"))),
-            "precipitation": self._number(current.get("precipitation")),
-            "pressure": self._number(current.get("surface_pressure")),
-            "cloud_cover": self._number(current.get("cloud_cover")),
+            "precipitation": self._optional_number(current.get("precipitation")),
+            "pressure": self._optional_number(current.get("surface_pressure")),
+            "cloud_cover": self._optional_number(current.get("cloud_cover")),
         }
 
     def _series(self, payload: dict[str, list[Any]]) -> list[dict[str, Any]]:
@@ -636,6 +781,11 @@ class OpenMeteoWeatherProvider:
     def _number(self, value: Any) -> float:
         if value is None:
             raise WeatherProviderError("Provider response is missing a required weather value")
+        return round(float(value), 2)
+
+    def _optional_number(self, value: Any) -> float | None:
+        if value is None:
+            return None
         return round(float(value), 2)
 
     def _with_cache_metadata(self, cached: dict[str, Any], retrieved_at: str, cache_hit: bool) -> dict[str, Any]:
