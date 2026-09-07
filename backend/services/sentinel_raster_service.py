@@ -7,8 +7,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from xml.etree import ElementTree
 
+from defusedxml import ElementTree
 import numpy as np
 import rasterio
 from rasterio.enums import Resampling

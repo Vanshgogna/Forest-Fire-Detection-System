@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     api_version: str = Field(default="v1", alias="API_VERSION")
     environment: str = Field(default="development", alias="ENVIRONMENT")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
-    backend_host: str = Field(default="0.0.0.0", alias="BACKEND_HOST")
+    backend_host: str = Field(default="127.0.0.1", alias="BACKEND_HOST")
     backend_port: int = Field(default=8000, alias="PORT")
 
     database_url: str = Field(default="postgresql+psycopg://firesight:firesight@localhost:5432/firesight", alias="DATABASE_URL")

@@ -39,8 +39,7 @@ SKIPPED_PARTS = {
 
 def should_skip(path: Path) -> bool:
     relative = path.relative_to(ROOT)
-    parts = set(relative.parts)
-    if parts & SKIPPED_PARTS or any(part.startswith(".test-cache") for part in relative.parts):
+    if any(part in SKIPPED_PARTS or part.startswith((".backend-venv", ".test-cache")) for part in relative.parts):
         return True
     relative_text = relative.as_posix()
     return any(relative_text.startswith(skipped + "/") for skipped in SKIPPED_PARTS)

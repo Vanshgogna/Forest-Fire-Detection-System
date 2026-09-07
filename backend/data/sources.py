@@ -6,8 +6,8 @@ from hashlib import sha256
 from pathlib import Path
 from time import sleep
 from typing import Callable
-from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.parse import urlparse
+import httpx
 import logging
 import shutil
 
@@ -67,7 +67,7 @@ class DataSource:
 
     @property
     def is_remote(self) -> bool:
-        return self.uri.startswith(("http://", "https://"))
+        return urlparse(self.uri).scheme in {"http", "https"}
 
 
 @dataclass(frozen=True)
@@ -162,7 +162,7 @@ class DataIngestionClient:
         for attempt in range(1, self.retry_attempts + 1):
             try:
                 return self._stream_remote(uri, destination, progress)
-            except (OSError, URLError) as exc:
+            except (OSError, httpx.HTTPError) as exc:
                 last_error = exc
                 logger.warning("dataset_download_retry uri=%s attempt=%s", uri, attempt)
                 if attempt < self.retry_attempts:
@@ -170,10 +170,14 @@ class DataIngestionClient:
         raise ExternalServiceError("Dataset source could not be downloaded") from last_error
 
     def _stream_remote(self, uri: str, destination: Path, progress: Callable[[int], None] | None) -> int:
+        scheme = urlparse(uri).scheme
+        if scheme not in {"http", "https"}:
+            raise ValueError("Remote dataset sources must use HTTP or HTTPS.")
         temporary_path = destination.with_suffix(destination.suffix + ".download")
         bytes_written = 0
-        with urlopen(uri, timeout=30) as response, temporary_path.open("wb") as target_file:
-            for chunk in iter(lambda: response.read(DOWNLOAD_CHUNK_BYTES), b""):
+        with httpx.stream("GET", uri, timeout=30.0, follow_redirects=True) as response, temporary_path.open("wb") as target_file:
+            response.raise_for_status()
+            for chunk in response.iter_bytes(chunk_size=DOWNLOAD_CHUNK_BYTES):
                 target_file.write(chunk)
                 bytes_written += len(chunk)
                 if progress:
