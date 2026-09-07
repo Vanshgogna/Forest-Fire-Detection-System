@@ -5,6 +5,7 @@ import logging
 import time
 from collections.abc import Callable
 from typing import Any
+from uuid import uuid4
 
 try:
     import redis
@@ -51,6 +52,30 @@ class CacheService:
             except Exception as exc:
                 logger.warning("cache_write_failed key=%s ttl_seconds=%s error=%s", key, ttl_seconds, exc.__class__.__name__)
         self._memory_cache[key] = (time.time() + ttl_seconds, json.dumps(value, default=str))
+
+    def acquire_lock(self, key: str, ttl_seconds: int = 15) -> str | None:
+        token = uuid4().hex
+        if self.client:
+            try:
+                acquired = self.client.set(key, token, nx=True, ex=ttl_seconds)
+                return token if acquired else None
+            except Exception as exc:
+                logger.warning("cache_lock_acquire_failed key=%s error=%s", key, exc.__class__.__name__)
+        return token
+
+    def release_lock(self, key: str, token: str) -> None:
+        if not self.client:
+            return
+        try:
+            script = """
+            if redis.call("get", KEYS[1]) == ARGV[1] then
+                return redis.call("del", KEYS[1])
+            end
+            return 0
+            """
+            self.client.eval(script, 1, key, token)
+        except Exception as exc:
+            logger.warning("cache_lock_release_failed key=%s error=%s", key, exc.__class__.__name__)
 
     def get_or_set(self, key: str, factory: Callable[[], Any], ttl_seconds: int = 300) -> Any:
         cached = self.get_json(key)

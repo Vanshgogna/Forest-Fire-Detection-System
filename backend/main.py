@@ -104,7 +104,7 @@ def readiness_check():
     return {
         "api": "ready" if ready else "degraded",
         "database": component_health["components"]["database"]["status"],
-        "cache": "configured",
+        "cache": component_health["components"]["cache"]["status"],
         "ml": component_health["components"]["prediction_engine"]["status"],
         "workers": "configured",
         "components": component_health["components"],

@@ -255,6 +255,15 @@ class HealthCheckService:
             return {"component": "database", "status": "degraded", "detail": "Database connection check failed"}
         return {"component": "database", "status": "ok", "detail": "Database connection check passed"}
 
+    def cache(self) -> dict:
+        try:
+            from backend.services.cache import CacheService
+
+            cache_health = CacheService().health()
+        except Exception:
+            return {"component": "cache", "status": "degraded", "detail": "Cache health check failed"}
+        return {"component": "cache", "status": cache_health["status"], "detail": cache_health}
+
     def weather_api(self) -> dict:
         try:
             from backend.core.config import get_settings
@@ -297,6 +306,7 @@ class HealthCheckService:
         checks = [
             self.backend(),
             self.database(),
+            self.cache(),
             self.weather_api(),
             self.satellite_pipeline(),
             self.prediction_engine(),

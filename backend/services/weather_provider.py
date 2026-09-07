@@ -4,6 +4,7 @@ import hashlib
 import logging
 import time
 from datetime import datetime, timedelta, timezone
+from threading import Lock
 from typing import Any
 from urllib.parse import urljoin
 from zoneinfo import ZoneInfo
@@ -78,6 +79,11 @@ RETRIABLE_PROVIDER_ERRORS = {
 }
 MAX_PROVIDER_ATTEMPTS = 2
 RETRY_BACKOFF_SECONDS = 0.15
+RATE_LIMIT_COOLDOWN_SECONDS = 60
+TRANSIENT_ERROR_COOLDOWN_SECONDS = 30
+MAX_ERROR_CACHE_SECONDS = 600
+COALESCED_WAIT_SECONDS = 10.0
+COALESCED_POLL_SECONDS = 0.1
 
 
 class WeatherProviderError(RuntimeError):
@@ -88,6 +94,8 @@ class OpenMeteoWeatherProvider:
     provider = ProviderName.OPEN_METEO.value
     provider_type = ProviderType.WEATHER
     source_type = "forecast_model_current_conditions"
+    _local_locks: dict[str, Lock] = {}
+    _local_locks_guard = Lock()
 
     def __init__(self, cache: CacheService | None = None, client: httpx.Client | None = None):
         self.settings = get_settings()
@@ -118,15 +126,65 @@ class OpenMeteoWeatherProvider:
             request=self._request_debug(params),
         )
         started = provider_operation_started(metadata)
-        fallback_cached = self._cached_fallback_candidate(cache_key)
-        cached = self.cache.get_json(cache_key)
         retrieved_at = datetime.now(timezone.utc).isoformat()
-
+        cached = self.cache.get_json(cache_key)
         if cached:
             payload = self._with_cache_metadata(cached, retrieved_at, cache_hit=True)
             provider_operation_completed(metadata, started, DataQualityStatus(payload["data_status"]), record_count=1)
             return payload
 
+        lock = self._local_lock(cache_key)
+        with lock:
+            retrieved_at = datetime.now(timezone.utc).isoformat()
+            cached = self.cache.get_json(cache_key)
+            if cached:
+                payload = self._with_cache_metadata(cached, retrieved_at, cache_hit=True)
+                provider_operation_completed(metadata, started, DataQualityStatus(payload["data_status"]), record_count=1)
+                return payload
+            payload, error_kind = self._refresh_weather_cache(cache_key, location, params, retrieved_at)
+            provider_operation_completed(
+                metadata,
+                started,
+                DataQualityStatus(payload["data_status"]),
+                record_count=1 if payload.get("status") == "ok" else 0,
+                error_kind=error_kind,
+            )
+            return payload
+
+    def _refresh_weather_cache(
+        self,
+        cache_key: str,
+        location: dict[str, Any],
+        params: dict[str, Any],
+        retrieved_at: str,
+    ) -> tuple[dict[str, Any], ProviderErrorKind | None]:
+        lock_key = self._refresh_lock_key(cache_key)
+        token = self.cache.acquire_lock(lock_key, ttl_seconds=self._refresh_lock_ttl_seconds())
+        if token:
+            try:
+                cached = self.cache.get_json(cache_key)
+                if cached:
+                    return self._with_cache_metadata(cached, retrieved_at, cache_hit=True), None
+                return self._fetch_and_cache(cache_key, location, params, retrieved_at)
+            finally:
+                self.cache.release_lock(lock_key, token)
+
+        coalesced = self._wait_for_coalesced_cache(cache_key, retrieved_at)
+        if coalesced:
+            return coalesced, None
+        fallback = self._cached_fallback_payload(self._cached_fallback_candidate(cache_key), retrieved_at, ProviderErrorKind.PROVIDER_UNAVAILABLE)
+        if fallback:
+            return fallback, ProviderErrorKind.PROVIDER_UNAVAILABLE
+        return self._unavailable_payload(location, retrieved_at, params, ProviderErrorKind.PROVIDER_UNAVAILABLE), ProviderErrorKind.PROVIDER_UNAVAILABLE
+
+    def _fetch_and_cache(
+        self,
+        cache_key: str,
+        location: dict[str, Any],
+        params: dict[str, Any],
+        retrieved_at: str,
+    ) -> tuple[dict[str, Any], ProviderErrorKind | None]:
+        fallback_cached = self._cached_fallback_candidate(cache_key)
         try:
             raw = self._fetch_open_meteo(params)
             normalized = self._normalize(raw, location, retrieved_at, params)
@@ -142,15 +200,14 @@ class OpenMeteoWeatherProvider:
             )
             fallback = self._cached_fallback_payload(fallback_cached, retrieved_at, error_kind)
             if fallback:
-                provider_operation_completed(metadata, started, DataQualityStatus(fallback["data_status"]), record_count=1, error_kind=error_kind)
-                return fallback
-            provider_operation_completed(metadata, started, DataQualityStatus.UNAVAILABLE, error_kind=error_kind)
-            return self._unavailable_payload(location, retrieved_at, params, error_kind)
+                return fallback, error_kind
+            unavailable = self._unavailable_payload(location, retrieved_at, params, error_kind)
+            self._cache_transient_unavailable(cache_key, unavailable, error_kind, exc)
+            return unavailable, error_kind
 
         self.cache.set_json(cache_key, normalized, ttl_seconds=self.settings.weather_cache_seconds)
         self.cache.set_json(self._fallback_cache_key(cache_key), normalized, ttl_seconds=self._fallback_cache_ttl_seconds())
-        provider_operation_completed(metadata, started, DataQualityStatus(normalized["data_status"]), record_count=1)
-        return normalized
+        return normalized, None
 
     def debug_for_region(self, region_id: str | None = None) -> dict[str, Any]:
         weather = self.weather_for_region(region_id=region_id)
@@ -268,11 +325,39 @@ class OpenMeteoWeatherProvider:
     def _fallback_cache_key(self, cache_key: str) -> str:
         return f"{cache_key}:fallback"
 
+    def _refresh_lock_key(self, cache_key: str) -> str:
+        return f"{cache_key}:refresh-lock"
+
+    def _local_lock(self, cache_key: str) -> Lock:
+        with self._local_locks_guard:
+            lock = self._local_locks.get(cache_key)
+            if lock is None:
+                lock = Lock()
+                self._local_locks[cache_key] = lock
+            return lock
+
+    def _refresh_lock_ttl_seconds(self) -> int:
+        request_budget = max(1, int(self.settings.weather_request_timeout * MAX_PROVIDER_ATTEMPTS))
+        backoff_budget = max(1, int(RETRY_BACKOFF_SECONDS * max(0, MAX_PROVIDER_ATTEMPTS - 1)))
+        return request_budget + backoff_budget + 5
+
     def _fallback_cache_ttl_seconds(self) -> int:
         return max(self.settings.weather_cache_seconds, self.settings.weather_stale_minutes * 60)
 
     def _cached_fallback_candidate(self, cache_key: str) -> dict[str, Any] | None:
         return self.cache.get_json(self._fallback_cache_key(cache_key)) or self.cache.get_json(cache_key, include_expired=True)
+
+    def _wait_for_coalesced_cache(self, cache_key: str, retrieved_at: str) -> dict[str, Any] | None:
+        deadline = time.monotonic() + COALESCED_WAIT_SECONDS
+        while time.monotonic() < deadline:
+            cached = self.cache.get_json(cache_key)
+            if cached:
+                return self._with_cache_metadata(cached, retrieved_at, cache_hit=True)
+            fallback = self._cached_fallback_candidate(cache_key)
+            if fallback:
+                return self._cached_fallback_payload(fallback, retrieved_at, ProviderErrorKind.PROVIDER_UNAVAILABLE)
+            time.sleep(COALESCED_POLL_SECONDS)
+        return None
 
     def _fetch_open_meteo(self, params: dict[str, Any]) -> dict[str, Any]:
         last_error: Exception | None = None
@@ -294,14 +379,42 @@ class OpenMeteoWeatherProvider:
         if error_kind not in TRANSIENT_PROVIDER_ERRORS or not cached:
             return None
         payload = self._with_cache_metadata(cached, retrieved_at, cache_hit=True)
-        if payload["data_status"] != DataQualityStatus.CACHED.value:
+        usable_statuses = {
+            DataQualityStatus.CACHED.value,
+            DataQualityStatus.RECENT.value,
+            DataQualityStatus.STALE.value,
+        }
+        if payload.get("status") != "ok" or "current" not in payload or payload["data_status"] not in usable_statuses:
             return None
         payload["message"] = f"Using cached Open-Meteo weather because live provider returned {error_kind.value}."
         payload["cache"]["fallback_reason"] = error_kind.value
         payload["cache"]["fallback"] = True
-        payload["provenance"]["quality_status"] = DataQualityStatus.CACHED.value
-        payload.setdefault("quality", {})["status"] = DataQualityStatus.CACHED.value
+        payload["provenance"]["quality_status"] = payload["data_status"]
+        payload.setdefault("quality", {})["status"] = payload["data_status"]
         return payload
+
+    def _cache_transient_unavailable(self, cache_key: str, payload: dict[str, Any], error_kind: ProviderErrorKind, exc: Exception) -> None:
+        if error_kind not in TRANSIENT_PROVIDER_ERRORS:
+            return
+        self.cache.set_json(cache_key, payload, ttl_seconds=self._transient_error_cache_ttl_seconds(error_kind, exc))
+
+    def _transient_error_cache_ttl_seconds(self, error_kind: ProviderErrorKind, exc: Exception) -> int:
+        if error_kind == ProviderErrorKind.RATE_LIMITED:
+            retry_after = self._retry_after_seconds(exc)
+            if retry_after is not None:
+                return max(1, min(retry_after, MAX_ERROR_CACHE_SECONDS))
+            return RATE_LIMIT_COOLDOWN_SECONDS
+        return TRANSIENT_ERROR_COOLDOWN_SECONDS
+
+    def _retry_after_seconds(self, exc: Exception) -> int | None:
+        response = getattr(exc, "response", None)
+        retry_after = getattr(response, "headers", {}).get("retry-after") if response is not None else None
+        if not retry_after:
+            return None
+        try:
+            return int(float(retry_after))
+        except ValueError:
+            return None
 
     def _unavailable_payload(
         self,
@@ -540,6 +653,13 @@ class OpenMeteoWeatherProvider:
         }
         current = cached.get("current") or {}
         location = cached.get("location") or {}
+        if cached.get("status") != "ok" or not current:
+            data_status = cached.get("data_status") or DataQualityStatus.UNAVAILABLE.value
+            cached["data_status"] = data_status
+            cached.setdefault("quality", {})["status"] = data_status
+            if cached.get("provenance"):
+                cached["provenance"]["quality_status"] = data_status
+            return cached
         if current.get("raw_provider_timestamp") and location.get("timezone"):
             cached["timestamp_analysis"] = self._timestamp_analysis(current.get("raw_provider_timestamp"), retrieved_at, location["timezone"])
         cached["data_status"] = self._data_status(

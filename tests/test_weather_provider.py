@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -186,6 +187,7 @@ def test_weather_provider_failure_after_unusable_cache_expiration_is_unavailable
     params = provider._params(provider.region_reference("r1"), forecast_days=3)
     key = provider._cache_key(params)
     CacheService._memory_cache[key] = (time.time() - 1, json.dumps(first, default=str))
+    CacheService._memory_cache.pop(provider._fallback_cache_key(key), None)
     second = provider.weather_for_region("r1")
 
     assert calls == 3
@@ -235,6 +237,30 @@ def test_weather_provider_429_uses_cached_fallback_without_labeling_live():
     assert second["provenance"]["quality_status"] == "CACHED"
 
 
+def test_weather_provider_429_uses_stale_cached_fallback_when_available():
+    calls = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(200, json=open_meteo_payload(temperature=25.9))
+        return httpx.Response(429, json={"reason": "rate limited"})
+
+    provider = provider_with_transport(handler)
+    provider.weather_for_region("r1")
+    expire_primary_weather_cache(provider)
+    payload = provider.weather_for_region("r1")
+
+    assert calls == 2
+    assert payload["status"] == "ok"
+    assert payload["data_status"] == "STALE"
+    assert payload["current"]["temperature"] == 25.9
+    assert payload["cache"]["fallback"] is True
+    assert payload["cache"]["fallback_reason"] == "RATE_LIMITED"
+    assert payload["provenance"]["quality_status"] == "STALE"
+
+
 def test_weather_provider_429_without_cached_data_is_unavailable_and_not_retried():
     calls = 0
 
@@ -245,12 +271,34 @@ def test_weather_provider_429_without_cached_data_is_unavailable_and_not_retried
 
     provider = provider_with_transport(handler)
     payload = provider.weather_for_region("r1")
+    repeated = provider.weather_for_region("r1")
 
     assert calls == 1
     assert payload["status"] == "unavailable"
     assert payload["data_status"] == "UNAVAILABLE"
     assert payload["error"] == "RATE_LIMITED"
     assert "current" not in payload
+    assert repeated["status"] == "unavailable"
+    assert repeated["cache"]["status"] == "hit"
+
+
+def test_weather_provider_coalesces_simultaneous_same_region_requests():
+    calls = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        time.sleep(0.05)
+        return httpx.Response(200, json=open_meteo_payload(temperature=28.4, observed_at=current_provider_time()))
+
+    provider = provider_with_transport(handler)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: provider.weather_for_region("r1"), range(2)))
+
+    assert calls == 1
+    assert results[0]["current"]["temperature"] == 28.4
+    assert results[1]["current"]["temperature"] == 28.4
+    assert {result["cache"]["status"] for result in results} == {"miss", "hit"}
 
 
 def test_weather_provider_timeout_uses_cached_fallback():
