@@ -71,6 +71,11 @@ export interface SentinelSceneStatus {
     min?: number | null;
     max?: number | null;
     valid_pixel_percentage?: number | null;
+    nbr_mean?: number | null;
+    nbr_median?: number | null;
+    nbr_min?: number | null;
+    nbr_max?: number | null;
+    nbr_valid_pixel_percentage?: number | null;
     processed_at?: string | null;
   };
   message?: string | null;

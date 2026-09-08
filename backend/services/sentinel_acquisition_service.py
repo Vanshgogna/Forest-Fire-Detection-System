@@ -128,6 +128,8 @@ class SentinelAcquisitionService:
         quality_stats = quality.get("stats") or {}
         ndvi = metadata.get("ndvi_processing") or {}
         ndvi_stats = ndvi.get("statistics") or {}
+        nbr_stats = ndvi.get("nbr_statistics") or {}
+        ndvi_status = ndvi.get("status", "DISCOVERED")
         return {
             "region_id": region_id,
             "available": record.acquisition_status in {SentinelAcquisitionStatus.ACQUIRED, SentinelAcquisitionStatus.VERIFIED},
@@ -166,7 +168,7 @@ class SentinelAcquisitionService:
                 "processed_at": quality.get("completed_at"),
             },
             "ndvi_processing": {
-                "status": ndvi.get("status", "DISCOVERED"),
+                "status": ndvi_status,
                 "quality_status": ndvi.get("quality_status"),
                 "processing_version": ndvi.get("processing_version"),
                 "mean": ndvi_stats.get("mean"),
@@ -174,9 +176,14 @@ class SentinelAcquisitionService:
                 "min": ndvi_stats.get("min"),
                 "max": ndvi_stats.get("max"),
                 "valid_pixel_percentage": ndvi_stats.get("valid_pixel_percentage"),
+                "nbr_mean": nbr_stats.get("mean"),
+                "nbr_median": nbr_stats.get("median"),
+                "nbr_min": nbr_stats.get("min"),
+                "nbr_max": nbr_stats.get("max"),
+                "nbr_valid_pixel_percentage": nbr_stats.get("valid_pixel_percentage"),
                 "processed_at": ndvi.get("processed_at"),
             },
-            "message": "Sentinel-2 scene acquired; NBR and fire-risk processing are not implemented in this phase.",
+            "message": "Sentinel-2 scene acquired; NDVI/NBR processing is ready." if ndvi_status in {"READY", "LOW_QUALITY"} else "Sentinel-2 scene acquired; NDVI/NBR processing has not completed.",
             "attribution": "Copernicus Data Space Ecosystem",
         }
 

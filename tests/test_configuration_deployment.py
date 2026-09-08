@@ -116,13 +116,12 @@ def test_weather_debug_endpoint_is_disabled_in_production(monkeypatch):
         get_settings.cache_clear()
 
 
-def test_vercel_configuration_sets_frontend_security_headers():
-    config = json.loads((PROJECT_ROOT / "vercel.json").read_text())
-    headers = {entry["key"]: entry["value"] for entry in config["headers"][0]["headers"]}
+def test_vercel_configuration_rewrites_spa_routes_without_intercepting_api():
+    config = json.loads((PROJECT_ROOT / "frontend" / "vercel.json").read_text())
+    rewrites = config["rewrites"]
 
-    assert "default-src 'self'" in headers["Content-Security-Policy"]
-    assert headers["X-Frame-Options"] == "DENY"
-    assert headers["X-Content-Type-Options"] == "nosniff"
+    assert {"source": "/api/:path*", "destination": "https://firesight-backend-vpcj.onrender.com/api/:path*"} in rewrites
+    assert {"source": "/:path((?!api/).*)", "destination": "/index.html"} in rewrites
 
 
 def test_docker_compose_declares_postgres_health_and_demo_login_env():

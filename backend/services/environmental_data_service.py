@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from backend.core.config import Settings, get_settings
@@ -9,8 +9,10 @@ from backend.repositories.environment import VegetationRepository
 from backend.schemas.environmental import CanonicalHotspotData, CanonicalVegetationData, CanonicalWeatherData, EnvironmentalSnapshot, MissingEnvironmentalData
 from backend.services.environmental_foundation import DataMode, DataProvenance, DataQualityStatus, ProviderName, ProviderType
 from backend.services.hotspot_aggregation_service import HotspotAggregationService
+from backend.services.hotspot_ingestion_service import FIRMSIngestionService
 from backend.services.region_registry import get_region_location
 from backend.services.sentinel_acquisition_service import SentinelAcquisitionService
+from backend.services.sentinel_ndvi_service import SentinelNDVIService
 from backend.services.weather_provider import OpenMeteoWeatherProvider
 
 
@@ -41,6 +43,11 @@ class EnvironmentalDataService:
                 record = VegetationRepository(db).latest_for_region(region.database_id)
                 if record and record.provider == ProviderName.SENTINEL_2.value and record.processing_version == self.settings.sentinel_ndvi_processing_version:
                     return self._canonical_vegetation_from_record(record)
+                if self.settings.sentinel_enabled:
+                    SentinelNDVIService(db, settings=self.settings).calculate_ndvi(region_id)
+                    record = VegetationRepository(db).latest_for_region(region.database_id)
+                    if record and record.provider == ProviderName.SENTINEL_2.value and record.processing_version == self.settings.sentinel_ndvi_processing_version:
+                        return self._canonical_vegetation_from_record(record)
                 scene = SentinelAcquisitionService(db, settings=self.settings).latest_scene_status(region_id)
             if scene.get("available"):
                 return self._missing(
@@ -57,6 +64,9 @@ class EnvironmentalDataService:
         try:
             with SessionLocal() as db:
                 summary = HotspotAggregationService(db, settings=self.settings).summary_for_region(region_id)
+                if not summary.available and self._hotspot_refresh_due(summary.retrieved_at):
+                    FIRMSIngestionService(db).ingest_regions([region_id])
+                    summary = HotspotAggregationService(db, settings=self.settings).summary_for_region(region_id)
                 return HotspotAggregationService(db, settings=self.settings).to_canonical_data(summary)
         except Exception as exc:
             return self._missing(f"Hotspot database aggregation is unavailable: {exc.__class__.__name__}.", DataQualityStatus.UNAVAILABLE)
@@ -142,11 +152,16 @@ class EnvironmentalDataService:
     def _canonical_weather_from_payload(self, weather: dict[str, Any]) -> CanonicalWeatherData:
         current = weather["current"]
         provenance = weather.get("provenance") or {}
+        precipitation = current.get("rainfall")
+        if precipitation is None:
+            precipitation = current.get("precipitation")
+        if precipitation is None:
+            precipitation = 0.0
         return CanonicalWeatherData(
             temperature=current["temperature"],
             humidity=current["humidity"],
             wind_speed=current["wind_speed"],
-            precipitation=current["precipitation"],
+            precipitation=precipitation,
             fire_weather_index=current["fire_weather_risk_index"],
             observed_at=provenance.get("observed_at") or current["observed_at"],
             retrieved_at=provenance.get("retrieved_at") or weather["retrieved_at"],
@@ -270,3 +285,13 @@ class EnvironmentalDataService:
         if any(status == DataQualityStatus.SIMULATED for status in statuses):
             return DataQualityStatus.SIMULATED
         return DataQualityStatus.LIVE
+
+    def _hotspot_refresh_due(self, retrieved_at: datetime | None) -> bool:
+        if not self.settings.firms_enabled:
+            return False
+        if not retrieved_at:
+            return True
+        if retrieved_at.tzinfo is None:
+            retrieved_at = retrieved_at.replace(tzinfo=timezone.utc)
+        refresh_after = timedelta(minutes=max(1, self.settings.firms_refresh_interval_minutes))
+        return datetime.now(timezone.utc) - retrieved_at >= refresh_after

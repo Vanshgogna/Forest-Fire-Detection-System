@@ -64,6 +64,13 @@ class HotspotAggregationService:
         try:
             region_row = self.db.get(Region, region.database_id) or self.db.query(Region).filter(Region.name == region.name).first()
             last_ingestion = self._last_ingestion(region.id)
+            if last_ingestion and last_ingestion.get("status") in {DataQualityStatus.UNAVAILABLE.value, DataQualityStatus.SUSPICIOUS.value}:
+                return self._unavailable(
+                    region.id,
+                    last_ingestion.get("message") or "The latest FIRMS ingestion attempt did not produce usable data.",
+                    retrieved_at=self._parse_datetime(last_ingestion.get("retrieved_at")),
+                )
+
             if not region_row:
                 if last_ingestion and last_ingestion.get("status") == DataQualityStatus.LIVE.value and last_ingestion.get("records_valid") == 0:
                     return HotspotSummary(
@@ -202,14 +209,14 @@ class HotspotAggregationService:
         a = math.sin(delta_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
         return earth_radius_km * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-    def _unavailable(self, region_id: str, message: str) -> HotspotSummary:
+    def _unavailable(self, region_id: str, message: str, retrieved_at: datetime | None = None) -> HotspotSummary:
         return HotspotSummary(
             status=DataQualityStatus.UNAVAILABLE,
             available=False,
             region_id=region_id,
             provider=ProviderName.NASA_FIRMS.value,
             product=self.settings.firms_product,
-            retrieved_at=None,
+            retrieved_at=retrieved_at,
             latest_detection_at=None,
             count_24h=None,
             count_48h=None,

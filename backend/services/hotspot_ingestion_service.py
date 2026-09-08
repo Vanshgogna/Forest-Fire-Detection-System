@@ -94,6 +94,8 @@ class FIRMSIngestionService:
                 status = provider_result.status
                 error_type = provider_result.error.kind
                 message = provider_result.error.message
+                self._persist_region_status(region.id, provider_result, None, 0, 0, 0)
+                self.db.commit()
                 continue
 
             try:

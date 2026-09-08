@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -10,6 +11,8 @@ from backend.schemas.environmental import CanonicalHotspotData, CanonicalVegetat
 from backend.services.environmental_data_service import EnvironmentalDataService
 from backend.services.environmental_foundation import DataMode
 from backend.services.region_registry import get_region_location
+
+logger = logging.getLogger("firesight.prediction")
 
 
 @dataclass(frozen=True)
@@ -55,7 +58,16 @@ class LivePredictionService:
         region = get_region_location(region_id)
         snapshot = self.environmental_service.get_environmental_snapshot(region_id)
         features, missing_sources, defaulted_features = self.features_from_snapshot(snapshot)
+        logger.info(
+            "prediction_inputs_evaluated region_id=%s required_inputs=%s available_inputs=%s missing_sources=%s defaulted_features=%s",
+            region_id,
+            list(FEATURE_COLUMNS),
+            sorted(features.keys()),
+            missing_sources,
+            defaulted_features,
+        )
         if missing_sources:
+            logger.warning("prediction_unavailable region_id=%s missing_sources=%s", region_id, missing_sources)
             return LivePredictionUnavailable(
                 region_id=region_id,
                 region=region.name,

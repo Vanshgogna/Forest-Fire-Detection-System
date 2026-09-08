@@ -1,3 +1,6 @@
+import logging
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from backend.core.config import get_settings
@@ -10,6 +13,7 @@ from backend.services.mock_environment import REGIONS
 from backend.services.region_registry import get_region_location
 
 router = APIRouter()
+logger = logging.getLogger("firesight.firms")
 
 
 @router.get("/")
@@ -40,7 +44,21 @@ def list_hotspots():
 
     try:
         with SessionLocal() as db:
-            summaries = HotspotAggregationService(db, settings=settings).summaries()
+            aggregation = HotspotAggregationService(db, settings=settings)
+            summaries = aggregation.summaries()
+            refresh_region_ids = _refreshable_hotspot_region_ids(summaries, settings)
+            if refresh_region_ids:
+                logger.info("firms_refresh_on_read_started region_ids=%s", refresh_region_ids)
+                result = FIRMSIngestionService(db).ingest_regions(refresh_region_ids)
+                logger.info(
+                    "firms_refresh_on_read_completed region_ids=%s status=%s records_received=%s records_valid=%s error_type=%s",
+                    refresh_region_ids,
+                    result.status.value,
+                    result.records_received,
+                    result.records_valid,
+                    result.error_type.value if result.error_type else None,
+                )
+                summaries = aggregation.summaries()
     except Exception as exc:
         return _unavailable(f"Hotspot database aggregation is unavailable: {exc.__class__.__name__}.")
 
@@ -141,3 +159,20 @@ def _unavailable(message: str, items: list[dict] | None = None):
 def _worst_status(statuses: list[str]) -> str:
     order = ["UNAVAILABLE", "SUSPICIOUS", "STALE", "CACHED", "RECENT", "LIVE"]
     return min(statuses, key=lambda status: order.index(status) if status in order else 0)
+
+
+def _refreshable_hotspot_region_ids(summaries, settings) -> list[str]:
+    if not settings.firms_enabled:
+        return []
+    refresh_after = timedelta(minutes=max(1, settings.firms_refresh_interval_minutes))
+    now = datetime.now(timezone.utc)
+    region_ids = []
+    for summary in summaries:
+        if summary.status.value in {"LIVE", "RECENT"} and summary.available:
+            continue
+        retrieved_at = summary.retrieved_at
+        if retrieved_at and retrieved_at.tzinfo is None:
+            retrieved_at = retrieved_at.replace(tzinfo=timezone.utc)
+        if not retrieved_at or now - retrieved_at >= refresh_after:
+            region_ids.append(summary.region_id)
+    return region_ids

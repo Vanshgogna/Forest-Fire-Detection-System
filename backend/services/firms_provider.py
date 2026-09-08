@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -37,6 +38,7 @@ SUPPORTED_FIRMS_PRODUCTS = {
 }
 
 REQUIRED_COLUMNS = {"latitude", "longitude", "acq_date", "acq_time", "satellite", "instrument", "confidence"}
+logger = logging.getLogger("firesight.firms")
 
 
 @dataclass(frozen=True)
@@ -127,9 +129,27 @@ class FIRMSProvider:
         url = self._area_csv_url(region, selected_product, selected_lookback)
         redacted_url = self._redacted_area_csv_url(url)
         try:
+            logger.info(
+                "firms_request_started provider=%s region_id=%s product=%s lookback_hours=%s bbox=%s url=%s",
+                self.provider,
+                region.id,
+                selected_product,
+                selected_lookback,
+                region.bounding_box(self.settings.firms_region_buffer_degrees),
+                redacted_url,
+            )
             response = self._get_with_retries(url)
             if response.status_code >= 400:
                 error_kind = classify_provider_error(status_code=response.status_code)
+                logger.warning(
+                    "firms_request_failure provider=%s region_id=%s status_code=%s error_kind=%s url=%s body=%s",
+                    self.provider,
+                    region.id,
+                    response.status_code,
+                    error_kind.value,
+                    redacted_url,
+                    response.text[:300],
+                )
                 provider_operation_completed(metadata, started, DataQualityStatus.UNAVAILABLE, error_kind=error_kind)
                 return FIRMSProviderResult(
                     status=DataQualityStatus.UNAVAILABLE,
@@ -141,10 +161,29 @@ class FIRMSProvider:
                     error=FIRMSProviderError(error_kind, f"FIRMS returned HTTP {response.status_code}.", response.status_code),
                 )
             result = self._parse_response(response.text, region, selected_product, selected_lookback, retrieved_at, redacted_url)
+            logger.info(
+                "firms_request_completed provider=%s region_id=%s status_code=%s data_status=%s records_received=%s records_valid=%s records_invalid=%s zero_records=%s",
+                self.provider,
+                region.id,
+                response.status_code,
+                result.status.value,
+                result.records_received,
+                result.records_valid,
+                result.records_invalid,
+                result.records_received == 0 and result.error is None,
+            )
             provider_operation_completed(metadata, started, result.status, record_count=result.records_valid, error_kind=result.error.kind if result.error else None)
             return result
         except Exception as exc:
             error_kind = classify_provider_error(exc)
+            logger.warning(
+                "firms_request_exception provider=%s region_id=%s error_kind=%s error_type=%s url=%s",
+                self.provider,
+                region.id,
+                error_kind.value,
+                exc.__class__.__name__,
+                redacted_url,
+            )
             provider_operation_completed(metadata, started, DataQualityStatus.UNAVAILABLE, error_kind=error_kind)
             return FIRMSProviderResult(
                 status=DataQualityStatus.UNAVAILABLE,

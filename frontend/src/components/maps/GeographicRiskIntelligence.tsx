@@ -87,8 +87,6 @@ export function GeographicRiskIntelligence({ regions, trendData, weatherData }: 
   const selectedWeatherAvailable = hasProviderData(selectedRegion.weatherSource?.status);
   const selectedWeatherStatus = sourceStatusLabel(selectedRegion.weatherSource);
   const rankedRegions = useMemo(() => [...regions].sort((a, b) => (hasPrediction(b) ? b.riskScore : -1) - (hasPrediction(a) ? a.riskScore : -1)), [regions]);
-  const latestWeather = weatherData[0];
-  const weatherOverlayAvailable = selectedWeatherAvailable && Boolean(latestWeather);
   const regionShapes = useMemo(
     () =>
       regions.map((region) => {
@@ -122,14 +120,14 @@ export function GeographicRiskIntelligence({ regions, trendData, weatherData }: 
       ["Monitored Regions", `${regions.length}`, Trees],
       ["High Risk Regions", predictedRegions.length ? `${highRiskRegions}` : "Unavailable", Flame],
       ["Average NDVI", averageNdvi, Satellite],
-      ["Average FWI", weatherData.length ? Math.round(average(weatherData.map((item) => item.fireWeatherIndex))).toString() : "Unavailable", Gauge],
-      ["Average Temp", weatherData.length ? `${Math.round(average(weatherData.map((item) => item.temperature)))}°C` : "Unavailable", CloudSun],
+      ["Prediction Coverage", predictedRegions.length ? `${predictedRegions.length}/${regions.length}` : "Unavailable", Gauge],
+      ["Weather Overlay", selectedWeatherAvailable ? selectedWeatherStatus : "Unavailable", CloudSun],
       ["FIRMS 24h Detections", hotspotCount, Activity],
       ["Vegetation Coverage", liveVegetationRegions.length ? "Available" : "Unavailable", Trees],
       ["Satellite Coverage", liveVegetationRegions.length ? "Available" : "Unavailable", Satellite]
     ];
     },
-    [regions, weatherData]
+    [regions, selectedWeatherAvailable, selectedWeatherStatus]
   );
   const goHome = () => {
     setBaseMapIndex(0);
@@ -147,7 +145,7 @@ export function GeographicRiskIntelligence({ regions, trendData, weatherData }: 
     downloadTextFile(`firesight-regional-risk-${stamp}.csv`, buildRegionsCsv(regions, weatherData), "text/csv;charset=utf-8");
   };
   const selectedRegionInsight = hasPrediction(selectedRegion)
-    ? `${selectedRegion.name} is currently assessed at ${selectedRegion.riskLevel.toLowerCase()} risk with ${selectedWeatherAvailable ? `${selectedRegion.temperature}°C temperature and ${selectedRegion.humidity}% humidity` : "weather unavailable"} plus ${hasProviderData(selectedRegion.hotspotSource?.status) ? `${selectedRegion.hotspots} active hotspot${selectedRegion.hotspots === 1 ? "" : "s"}` : "no live hotspot count available"}.`
+    ? `${selectedRegion.name} is currently assessed at ${selectedRegion.riskLevel.toLowerCase()} risk with ${hasProviderData(selectedRegion.hotspotSource?.status) ? `${selectedRegion.hotspots} active hotspot${selectedRegion.hotspots === 1 ? "" : "s"}` : "no live hotspot count available"}.`
     : `${selectedRegion.name} does not have a live prediction available yet, so field decisions should wait for provider recovery or use direct observations.`;
   const weatherVegetationInsight = hasProviderData(selectedRegion.vegetationSource?.status)
     ? `Risk context for ${selectedRegion.name} includes ${selectedWeatherAvailable ? "weather inputs," : "no available weather inputs,"} NDVI ${selectedRegion.ndvi}, and NBR ${selectedRegion.nbr}.`
@@ -222,7 +220,7 @@ export function GeographicRiskIntelligence({ regions, trendData, weatherData }: 
                       <br />
                       {hasPrediction(region) ? `Risk ${region.riskScore} · Confidence ${region.confidence}%` : "Live prediction unavailable"}
                       <br />
-                      {hasProviderData(region.weatherSource?.status) ? `${region.temperature}°C` : "Weather unavailable"} · {hasProviderData(region.vegetationSource?.status) ? `NDVI ${region.ndvi}` : "NDVI unavailable"}
+                      {hasProviderData(region.vegetationSource?.status) ? `NDVI ${region.ndvi}` : "NDVI unavailable"}
                     </Tooltip>
                     <Popup>
                       <strong>{region.name}</strong>
@@ -272,8 +270,6 @@ export function GeographicRiskIntelligence({ regions, trendData, weatherData }: 
             <div className="selected-region-metrics">
               <span>Prediction {riskText(selectedRegion)}</span>
               <span>Confidence {hasPrediction(selectedRegion) ? `${selectedRegion.confidence}%` : "Unavailable"}</span>
-              <span>{selectedWeatherAvailable ? `${selectedRegion.temperature}°C` : "Weather unavailable"}</span>
-              <span>{selectedWeatherAvailable ? `${selectedRegion.humidity}% humidity` : "Humidity unavailable"}</span>
               <span>{hasProviderData(selectedRegion.vegetationSource?.status) ? `NDVI ${selectedRegion.ndvi}` : "NDVI unavailable"}</span>
               <span>{nbrText(selectedRegion)}</span>
               <span>{hasProviderData(selectedRegion.hotspotSource?.status) ? `${selectedRegion.hotspots} hotspots` : "Hotspots unavailable"}</span>
@@ -286,10 +282,10 @@ export function GeographicRiskIntelligence({ regions, trendData, weatherData }: 
               <span>{selectedWeatherStatus}</span>
             </div>
             <div className="weather-overlay-grid">
-              <span>Temp <strong>{weatherOverlayAvailable ? `${latestWeather.temperature}°C` : "Unavailable"}</strong></span>
-              <span>Wind <strong>{weatherOverlayAvailable ? `${latestWeather.wind} km/h` : "Unavailable"}</strong></span>
-              <span>Humidity <strong>{weatherOverlayAvailable ? `${latestWeather.humidity}%` : "Unavailable"}</strong></span>
-              <span>Rainfall <strong>{weatherOverlayAvailable ? `${latestWeather.rainfall} mm` : "Unavailable"}</strong></span>
+              <span>Temp <strong>{selectedWeatherAvailable ? `${selectedRegion.temperature}°C` : "Unavailable"}</strong></span>
+              <span>Wind <strong>{selectedWeatherAvailable ? `${selectedRegion.windSpeed} km/h` : "Unavailable"}</strong></span>
+              <span>Humidity <strong>{selectedWeatherAvailable ? `${selectedRegion.humidity}%` : "Unavailable"}</strong></span>
+              <span>Rainfall <strong>{selectedWeatherAvailable ? `${selectedRegion.rainfall} mm` : "Unavailable"}</strong></span>
             </div>
           </section>
         </aside>
@@ -348,11 +344,8 @@ export function GeographicRiskIntelligence({ regions, trendData, weatherData }: 
                   <th>Risk Score</th>
                   <th>Prediction</th>
                   <th>Confidence</th>
-                  <th>Temp</th>
-                  <th>Humidity</th>
                   <th>NDVI</th>
                   <th>NBR</th>
-                  <th>FWI</th>
                   <th>Prediction Source</th>
                 </tr>
               </thead>
@@ -363,11 +356,8 @@ export function GeographicRiskIntelligence({ regions, trendData, weatherData }: 
                     <td>{riskText(region)}</td>
                     <td>{hasPrediction(region) ? region.riskLevel : "Unavailable"}</td>
                     <td>{hasPrediction(region) ? `${region.confidence}%` : "Unavailable"}</td>
-                    <td>{hasProviderData(region.weatherSource?.status) ? `${region.temperature}°C` : "Unavailable"}</td>
-                    <td>{hasProviderData(region.weatherSource?.status) ? `${region.humidity}%` : "Unavailable"}</td>
                     <td>{hasProviderData(region.vegetationSource?.status) ? region.ndvi : "Unavailable"}</td>
                     <td>{hasPrediction(region) ? nbrText(region).replace("NBR ", "") : "Unavailable"}</td>
-                    <td>{weatherData.length ? Math.round(average(weatherData.map((item) => item.fireWeatherIndex))) : "Unavailable"}</td>
                     <td>{region.riskSource?.dataStatus ?? "UNAVAILABLE"}</td>
                   </tr>
                 ))}

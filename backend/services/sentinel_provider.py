@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import re
 import time
@@ -27,6 +28,7 @@ from backend.services.region_registry import RegionLocation, get_region_location
 
 SENTINEL_SOURCE_TYPE = "copernicus_odata_products"
 RETRIABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+logger = logging.getLogger("firesight.sentinel")
 
 
 class SentinelAcquisitionStatus:
@@ -173,9 +175,27 @@ class SentinelProvider:
         catalog_url = self._catalog_products_url()
         params = self._search_params(region, retrieved_at)
         try:
+            logger.info(
+                "sentinel_catalogue_request provider=%s region_id=%s product_type=%s lookback_days=%s max_cloud_cover=%s bbox=%s url=%s",
+                self.provider,
+                region.id,
+                self.settings.sentinel_product_type,
+                self.settings.sentinel_lookback_days,
+                self.settings.sentinel_max_cloud_cover,
+                region.bounding_box(),
+                catalog_url,
+            )
             response = self._request_with_retries("GET", catalog_url, params=params)
             if response.status_code >= 400:
                 error_kind = classify_provider_error(status_code=response.status_code)
+                logger.warning(
+                    "sentinel_catalogue_failure provider=%s region_id=%s status_code=%s error_kind=%s url=%s",
+                    self.provider,
+                    region.id,
+                    response.status_code,
+                    error_kind.value,
+                    str(response.request.url),
+                )
                 provider_operation_completed(metadata, started, DataQualityStatus.UNAVAILABLE, error_kind=error_kind)
                 return SentinelProviderResult(
                     status=DataQualityStatus.UNAVAILABLE,
@@ -189,6 +209,15 @@ class SentinelProvider:
             scenes = self._parse_search_payload(payload, region, retrieved_at, str(response.request.url))
             selected = self.select_scene(scenes)
             status = selected.quality_status if selected else DataQualityStatus.UNAVAILABLE
+            logger.info(
+                "sentinel_catalogue_success provider=%s region_id=%s scenes_found=%s selected_product_id=%s selected_scene=%s quality_status=%s",
+                self.provider,
+                region.id,
+                len(scenes),
+                selected.product_id if selected else None,
+                selected.name if selected else None,
+                status.value,
+            )
             provider_operation_completed(metadata, started, status, record_count=len(scenes))
             return SentinelProviderResult(
                 status=status,
@@ -201,6 +230,13 @@ class SentinelProvider:
             )
         except Exception as exc:
             error_kind = classify_provider_error(exc)
+            logger.warning(
+                "sentinel_catalogue_exception provider=%s region_id=%s error_kind=%s error_type=%s",
+                self.provider,
+                region.id,
+                error_kind.value,
+                exc.__class__.__name__,
+            )
             provider_operation_completed(metadata, started, DataQualityStatus.UNAVAILABLE, error_kind=error_kind)
             return SentinelProviderResult(
                 status=DataQualityStatus.UNAVAILABLE,
@@ -245,6 +281,15 @@ class SentinelProvider:
         hasher = hashlib.sha256()
         bytes_written = 0
         try:
+            logger.info(
+                "sentinel_download_started provider=%s region_id=%s product_id=%s scene=%s max_bytes=%s url=%s",
+                self.provider,
+                scene.region_id,
+                scene.product_id,
+                scene.name,
+                max_bytes,
+                url,
+            )
             own_client = self.client is None
             client = self.client or httpx.Client(timeout=self.settings.sentinel_request_timeout)
             try:
@@ -259,6 +304,14 @@ class SentinelProvider:
                                 continue
                             if response.status_code >= 400:
                                 error_kind = classify_provider_error(status_code=response.status_code)
+                                logger.warning(
+                                    "sentinel_download_failure provider=%s region_id=%s product_id=%s status_code=%s error_kind=%s",
+                                    self.provider,
+                                    scene.region_id,
+                                    scene.product_id,
+                                    response.status_code,
+                                    error_kind.value,
+                                )
                                 return SentinelDownloadResult(
                                     SentinelAcquisitionStatus.FAILED,
                                     None,
@@ -314,8 +367,23 @@ class SentinelProvider:
                     SentinelProviderError(ProviderErrorKind.INVALID_RESPONSE, "Copernicus download produced an empty file."),
                 )
             part_path.replace(final_path)
+            logger.info(
+                "sentinel_download_success provider=%s region_id=%s product_id=%s file_size_bytes=%s",
+                self.provider,
+                scene.region_id,
+                scene.product_id,
+                bytes_written,
+            )
             return SentinelDownloadResult(SentinelAcquisitionStatus.VERIFIED, str(final_path), hasher.hexdigest(), bytes_written, retrieved_at)
         except Exception as exc:
+            logger.warning(
+                "sentinel_download_exception provider=%s region_id=%s product_id=%s error_type=%s bytes_written=%s",
+                self.provider,
+                scene.region_id,
+                scene.product_id,
+                exc.__class__.__name__,
+                bytes_written or None,
+            )
             self._cleanup_file(part_path)
             return SentinelDownloadResult(
                 SentinelAcquisitionStatus.FAILED,
@@ -332,6 +400,7 @@ class SentinelProvider:
         error = self._configuration_error(require_credentials=True)
         if error:
             raise RuntimeError(error.message)
+        logger.info("sentinel_authentication_started provider=%s token_url=%s", self.provider, self.settings.copernicus_token_url)
         response = self._request_with_retries(
             "POST",
             self.settings.copernicus_token_url,
@@ -343,13 +412,16 @@ class SentinelProvider:
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         if response.status_code >= 400:
+            logger.warning("sentinel_authentication_failure provider=%s status_code=%s", self.provider, response.status_code)
             raise RuntimeError(f"Copernicus authentication returned HTTP {response.status_code}.")
         payload = response.json()
         access_token = payload.get("access_token")
         if not isinstance(access_token, str) or not access_token:
+            logger.warning("sentinel_authentication_failure provider=%s status_code=%s reason=missing_access_token", self.provider, response.status_code)
             raise ValueError("Copernicus token response did not include access_token.")
         expires_in = int(payload.get("expires_in") or 300)
         self._token = CopernicusToken(access_token=access_token, expires_at=datetime.now(timezone.utc) + timedelta(seconds=expires_in))
+        logger.info("sentinel_authentication_success provider=%s expires_in_seconds=%s", self.provider, expires_in)
         return access_token
 
     def _configuration_error(self, require_credentials: bool = True) -> SentinelProviderError | None:

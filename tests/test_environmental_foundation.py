@@ -168,6 +168,26 @@ def test_environmental_snapshot_constructs_partial_missing_data_contract(monkeyp
     assert snapshot.provenance["weather"]["provider"] == "open-meteo"
 
 
+def test_environmental_snapshot_accepts_cached_weather_rainfall_when_precipitation_is_null(monkeypatch):
+    db = _session()
+
+    class SessionFactory:
+        def __call__(self):
+            return db
+
+    payload = weather_payload(DataQualityStatus.CACHED)
+    payload["current"]["rainfall"] = 1.2
+    payload["current"]["precipitation"] = None
+    monkeypatch.setattr("backend.services.environmental_data_service.SessionLocal", SessionFactory())
+    service = EnvironmentalDataService(weather_provider=FakeWeatherProvider(payload))
+
+    snapshot = service.get_environmental_snapshot("r1")
+
+    assert isinstance(snapshot.weather, CanonicalWeatherData)
+    assert snapshot.weather.precipitation == 1.2
+    assert snapshot.quality["weather_status"] == DataQualityStatus.CACHED
+
+
 def test_simulation_mode_does_not_call_live_weather_for_latest_weather():
     provider = FakeWeatherProvider(weather_payload())
     service = EnvironmentalDataService(weather_provider=provider, settings=Settings(DATA_MODE="simulation"))

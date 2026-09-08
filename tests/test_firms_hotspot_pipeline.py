@@ -151,6 +151,21 @@ def test_zero_hotspots_are_available_not_unavailable_after_ingestion():
     assert summary.records == []
 
 
+def test_firms_failed_ingestion_is_persisted_as_unavailable_diagnostic():
+    db = _session()
+    provider = _provider_for_response("rate limited", status_code=429)
+
+    result = FIRMSIngestionService(db, provider=provider).ingest_regions(["r1"])
+    summary = HotspotAggregationService(db, settings=_settings()).summary_for_region("r1")
+
+    assert result.status == DataQualityStatus.UNAVAILABLE
+    assert result.error_type == ProviderErrorKind.RATE_LIMITED
+    assert summary.available is False
+    assert summary.status == DataQualityStatus.UNAVAILABLE
+    assert summary.retrieved_at is not None
+    assert "HTTP 429" in (summary.message or "")
+
+
 def test_firms_ingestion_is_idempotent_and_aggregation_counts_windows():
     db = _session()
     provider = _provider_for_response(_csv(_current_row()))

@@ -204,6 +204,37 @@ def test_sentinel_acquisition_persists_provenance_and_is_idempotent(tmp_path):
     assert status["product_id"] == "product-1"
 
 
+def test_sentinel_status_exposes_processed_ndvi_and_nbr(tmp_path):
+    db = _session()
+    now = datetime.now(timezone.utc)
+    provider = _provider_with_transport(
+        lambda request: httpx.Response(200, json={"value": [_scene_item("product-1", "S2A_MSIL2A_20260829T050000_N0511_R019_T43PGP_20260829T090000.SAFE", 4, now)]}, request=request),
+        tmp_path,
+    )
+    service = SentinelAcquisitionService(db, provider=provider, settings=provider.settings)
+    service.acquire_latest_scene(["r1"], download=False)
+    record = SatelliteImageRepository(db).by_product_id("sentinel-2", "product-1")
+    record.metadata_json = {
+        **(record.metadata_json or {}),
+        "ndvi_processing": {
+            "status": "READY",
+            "quality_status": "LIVE",
+            "processing_version": provider.settings.sentinel_ndvi_processing_version,
+            "statistics": {"mean": 0.52, "valid_pixel_percentage": 94.0},
+            "nbr_statistics": {"mean": 0.31, "valid_pixel_percentage": 93.0},
+            "processed_at": now.isoformat(),
+        },
+    }
+    db.commit()
+
+    status = service.latest_scene_status("r1")
+
+    assert status["ndvi_processing"]["status"] == "READY"
+    assert status["ndvi_processing"]["mean"] == 0.52
+    assert status["ndvi_processing"]["nbr_mean"] == 0.31
+    assert "NDVI/NBR processing is ready" in status["message"]
+
+
 def test_sentinel_acquisition_keeps_unavailable_when_no_scene(tmp_path):
     db = _session()
     provider = _provider_with_transport(lambda request: httpx.Response(200, json={"value": []}, request=request), tmp_path)

@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from backend.core.config import get_settings
@@ -15,6 +17,7 @@ from backend.services.satellite_processor import SatelliteProcessor
 
 router = APIRouter()
 processor = SatelliteProcessor()
+logger = logging.getLogger("firesight.sentinel")
 FIXTURE_SOURCE = {
     "status": "simulated",
     "source_type": "simulated_development_fixture",
@@ -100,10 +103,31 @@ def latest_sentinel_scene(region_id: str = "r1"):
 
 @router.get("/satellite/status")
 def sentinel_scene_status():
+    settings = get_settings()
     try:
         with SessionLocal() as db:
-            service = SentinelAcquisitionService(db)
-            scenes = [service.latest_scene_status(region.id) for region in list_region_locations()]
+            service = SentinelAcquisitionService(db, settings=settings)
+            ndvi_service = SentinelNDVIService(db, settings=settings)
+            scenes = []
+            for region in list_region_locations():
+                scene = service.latest_scene_status(region.id)
+                if _needs_ndvi_nbr_processing(scene) and settings.sentinel_enabled:
+                    logger.info(
+                        "sentinel_ndvi_nbr_calculation_started region_id=%s reason=%s",
+                        region.id,
+                        _sentinel_processing_reason(scene),
+                    )
+                    result = ndvi_service.calculate_ndvi(region.id)
+                    logger.info(
+                        "sentinel_ndvi_nbr_calculation_completed region_id=%s status=%s quality_status=%s error_kind=%s error_message=%s",
+                        region.id,
+                        result.status,
+                        result.quality_status.value,
+                        result.error.kind.value if result.error else None,
+                        result.error.message if result.error else None,
+                    )
+                    scene = service.latest_scene_status(region.id)
+                scenes.append(scene)
         available = [scene for scene in scenes if scene["available"]]
         return {
             "scenes": scenes,
@@ -112,7 +136,7 @@ def sentinel_scene_status():
             "status": _worst_status([scene["status"] for scene in scenes]),
             "provider": ProviderName.SENTINEL_2.value,
             "source_type": "copernicus_odata_products",
-            "message": "Sentinel-2 acquisition status. NDVI status is available separately; NBR processing is not implemented.",
+            "message": "Sentinel-2 acquisition and NDVI/NBR processing status.",
             "attribution": "Copernicus Data Space Ecosystem",
         }
     except Exception as exc:
@@ -196,12 +220,12 @@ def _unavailable_satellite_status(region_id: str, message: str):
 
 def _ndvi_region_summary(region, ndvi_regions: list[dict]):
     item = next((entry for entry in ndvi_regions if entry.get("region_id") == region.id), {})
-    ready = item.get("available") and isinstance(item.get("mean"), (int, float))
+    ready = item.get("available") and isinstance(item.get("mean"), (int, float)) and isinstance(item.get("nbr_mean"), (int, float))
     return {
         "region_id": region.id,
         "region": region.name,
         "ndvi": item.get("mean") if ready else None,
-        "nbr": None,
+        "nbr": item.get("nbr_mean") if ready else None,
         "source_type": "sentinel2_l2a_ndvi_processing" if ready else "copernicus_odata_products",
         "status": item.get("quality_status", DataQualityStatus.UNAVAILABLE.value),
         "valid_pixel_percentage": item.get("valid_pixel_percentage"),
@@ -211,3 +235,21 @@ def _ndvi_region_summary(region, ndvi_regions: list[dict]):
 def _worst_status(statuses: list[str]) -> str:
     order = ["UNAVAILABLE", "SUSPICIOUS", "STALE", "CACHED", "RECENT", "LIVE"]
     return min(statuses, key=lambda status: order.index(status) if status in order else 0) if statuses else DataQualityStatus.UNAVAILABLE.value
+
+
+def _needs_ndvi_nbr_processing(scene: dict) -> bool:
+    ndvi = scene.get("ndvi_processing") or {}
+    if ndvi.get("status") not in {"READY", "LOW_QUALITY"}:
+        return True
+    return not (isinstance(ndvi.get("mean"), (int, float)) and isinstance(ndvi.get("nbr_mean"), (int, float)))
+
+
+def _sentinel_processing_reason(scene: dict) -> str:
+    if not scene.get("available"):
+        return "no_acquired_scene"
+    ndvi = scene.get("ndvi_processing") or {}
+    if ndvi.get("status") not in {"READY", "LOW_QUALITY"}:
+        return "ndvi_not_ready"
+    if not isinstance(ndvi.get("nbr_mean"), (int, float)):
+        return "nbr_missing"
+    return "refresh_requested"

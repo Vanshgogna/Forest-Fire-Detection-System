@@ -71,7 +71,9 @@ interface WeatherApiResponse {
   data_status?: MetricSource["dataStatus"];
   provider: string;
   source_type: string;
-  location: MetricSource["location"];
+  location?: NonNullable<MetricSource["location"]> & {
+    region_id?: string;
+  };
   current?: {
     temperature: number;
     humidity: number;
@@ -241,7 +243,7 @@ function sourceFromSentinel(scene?: SentinelSceneStatus, response?: SentinelStat
     };
   }
   const ndvi = scene.ndvi_processing;
-  if ((ndvi?.status === "READY" || ndvi?.status === "LOW_QUALITY") && typeof ndvi.mean === "number") {
+  if ((ndvi?.status === "READY" || ndvi?.status === "LOW_QUALITY") && typeof ndvi.mean === "number" && typeof ndvi.nbr_mean === "number") {
     const dataStatus = ndvi.quality_status ?? scene.status ?? "LIVE";
     return {
       status: dataStatus === "SUSPICIOUS" ? "degraded" : "live",
@@ -250,7 +252,7 @@ function sourceFromSentinel(scene?: SentinelSceneStatus, response?: SentinelStat
       observedAt: scene.captured_at ?? undefined,
       retrievedAt: ndvi.processed_at ?? scene.retrieved_at ?? undefined,
       dataStatus,
-      message: `${dataStatus} · NDVI ${ndvi.mean.toFixed(3)} · ${Math.round(ndvi.valid_pixel_percentage ?? 0)}% valid pixels`
+      message: `${dataStatus} · NDVI ${ndvi.mean.toFixed(3)} · NBR ${ndvi.nbr_mean.toFixed(3)} · ${Math.round(ndvi.valid_pixel_percentage ?? 0)}% valid pixels`
     };
   }
   return {
@@ -288,14 +290,17 @@ async function loadLiveWeather(): Promise<{ regions: RegionRisk[]; weatherData: 
   for (const result of responses) {
     if (result.status === "fulfilled") {
       const response = result.value.data;
-      if (response.location?.region) {
-        weatherByRegion.set(response.location.region, response);
+      if (response.location?.region_id) {
+        weatherByRegion.set(response.location.region_id, response);
+      } else if (response.location?.region) {
+        const matchingRegion = regions.find((region) => region.name === response.location?.region);
+        if (matchingRegion) weatherByRegion.set(matchingRegion.id, response);
       }
     }
   }
 
   const updatedRegions = regions.map((region) => {
-    const weather = weatherByRegion.get(region.name);
+    const weather = weatherByRegion.get(region.id);
     const source = weather ? sourceFromWeather(weather) : simulatedWeatherSource;
     if (weather && isWeatherResponseUsable(weather)) {
       return {
@@ -312,10 +317,10 @@ async function loadLiveWeather(): Promise<{ regions: RegionRisk[]; weatherData: 
     return { ...region, weatherSource: source, vegetationSource: unavailableVegetationSource, hotspotSource: simulatedHotspotSource };
   });
 
-  const primaryWeather = weatherByRegion.get(regions[0].name);
+  const primaryWeather = weatherByRegion.get(regions[0].id);
   const weatherDataByRegion = Object.fromEntries(
     regions.map((region) => {
-      const weather = weatherByRegion.get(region.name);
+      const weather = weatherByRegion.get(region.id);
       return [region.id, weather ? forecastFromWeather(weather) : []];
     })
   );
@@ -386,7 +391,8 @@ export function useEnvironmentalData() {
       await wait(MOCK_NETWORK_DELAY_MS);
       try {
         const liveWeather = await loadLiveWeather();
-        const [liveHotspots, liveSentinel, livePredictions] = await Promise.all([loadLiveHotspots(), loadLiveSentinelScenes(), loadLivePredictions()]);
+        const [liveHotspots, liveSentinel] = await Promise.all([loadLiveHotspots(), loadLiveSentinelScenes()]);
+        const livePredictions = await loadLivePredictions();
         const regionsWithHotspots = liveWeather.regions.map((region) => {
           const hotspotSummary = liveHotspots.byRegion.get(region.id);
           const sentinelScene = liveSentinel.byRegion.get(region.id);
@@ -394,17 +400,14 @@ export function useEnvironmentalData() {
           const hotspotSource = sourceFromHotspots(hotspotSummary, { hotspots: [], total: null, status: "UNAVAILABLE", provider: "nasa-firms", source_type: "firms_area_csv" });
           const predictionSource = sourceFromPrediction(prediction);
           const featureValues = prediction?.status === "ok" ? prediction.feature_values : undefined;
+          const ndviProcessing = sentinelScene?.ndvi_processing;
           return {
             ...region,
             riskScore: prediction?.status === "ok" && typeof prediction.risk_score === "number" ? prediction.risk_score : region.riskScore,
             riskLevel: prediction?.status === "ok" && prediction.risk_level ? prediction.risk_level : region.riskLevel,
             confidence: prediction?.status === "ok" && typeof prediction.confidence === "number" ? prediction.confidence : region.confidence,
-            temperature: typeof featureValues?.temperature === "number" ? Math.round(featureValues.temperature) : region.temperature,
-            humidity: typeof featureValues?.humidity === "number" ? Math.round(featureValues.humidity) : region.humidity,
-            windSpeed: typeof featureValues?.wind_speed === "number" ? Math.round(featureValues.wind_speed) : region.windSpeed,
-            rainfall: typeof featureValues?.rainfall === "number" ? featureValues.rainfall : region.rainfall,
-            ndvi: typeof featureValues?.ndvi === "number" ? featureValues.ndvi : region.ndvi,
-            nbr: typeof featureValues?.nbr === "number" ? featureValues.nbr : region.nbr,
+            ndvi: typeof featureValues?.ndvi === "number" ? featureValues.ndvi : typeof ndviProcessing?.mean === "number" ? ndviProcessing.mean : region.ndvi,
+            nbr: typeof featureValues?.nbr === "number" ? featureValues.nbr : typeof ndviProcessing?.nbr_mean === "number" ? ndviProcessing.nbr_mean : region.nbr,
             hotspots: prediction?.status === "ok" && typeof featureValues?.hotspots === "number" ? featureValues.hotspots : hotspotSummary?.available ? hotspotSummary.count_24h ?? 0 : region.hotspots,
             hotspotDetections: hotspotSummary?.detections ?? [],
             hotspotSource,
