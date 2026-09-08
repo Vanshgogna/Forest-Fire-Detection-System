@@ -9,6 +9,7 @@ import { Panel } from "../components/common/Panel";
 import { ENVIRONMENTAL_QUERY_KEY, useEnvironmentalData } from "../hooks/useEnvironmentalData";
 import { useEnvironmentalContext } from "../contexts/EnvironmentalContext";
 import { buildRegionsCsv, downloadTextFile, safeFileNamePart } from "../utils/downloads";
+import { hasProviderData } from "../utils/risk";
 
 export function AnalyticsPage() {
   const queryClient = useQueryClient();
@@ -16,7 +17,7 @@ export function AnalyticsPage() {
   const { selectedRegionId } = useEnvironmentalContext();
   if (isLoading || !data) return <div className="loading-state">Preparing analytics dashboard...</div>;
   const region = data.regions.find((item) => item.id === selectedRegionId) ?? data.regions[0];
-  const weatherAvailable = region.weatherSource?.status === "live" || region.weatherSource?.status === "degraded";
+  const weatherAvailable = hasProviderData(region.weatherSource?.status);
   const selectedWeatherData = weatherAvailable ? data.weatherDataByRegion?.[region.id] ?? data.weatherData : [];
   const exportAnalytics = () => {
     const stamp = new Date().toISOString().slice(0, 10);

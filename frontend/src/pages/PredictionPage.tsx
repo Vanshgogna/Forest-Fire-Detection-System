@@ -6,18 +6,19 @@ import { RegionTable } from "../components/dashboard/RegionTable";
 import { ExplainabilityDashboard } from "../components/prediction/ExplainabilityDashboard";
 import { useEnvironmentalData } from "../hooks/useEnvironmentalData";
 import { useEnvironmentalContext } from "../contexts/EnvironmentalContext";
+import { hasProviderData, sourceStatusLabel } from "../utils/risk";
 
 export function PredictionPage() {
   const { data, isLoading } = useEnvironmentalData();
   const { selectedRegionId } = useEnvironmentalContext();
   if (isLoading || !data) return <div className="loading-state">Running prediction model...</div>;
   const region = data.regions.find((item) => item.id === selectedRegionId) ?? data.regions[0];
-  const weatherAvailable = region.weatherSource?.status === "live" || region.weatherSource?.status === "degraded";
+  const weatherAvailable = hasProviderData(region.weatherSource?.status);
   const selectedWeatherData = weatherAvailable ? data.weatherDataByRegion?.[region.id] ?? data.weatherData : [];
   const predictionAvailable = region.riskStatus !== "unavailable";
   const predictionDetail = region.riskSource?.message ?? "Live prediction unavailable";
   const predictionModeLabel = region.riskStatus === "live" ? "live model output" : region.riskStatus === "simulation" ? "simulation output" : "No fake live score shown";
-  const weatherStatus = region.weatherSource?.dataStatus ?? (weatherAvailable ? "LIVE" : "UNAVAILABLE");
+  const weatherStatus = sourceStatusLabel(region.weatherSource);
 
   return (
     <>

@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../services/api";
 import { regions, trendData, weatherData } from "../constants/mockData";
 import { EnvironmentalSnapshot, HotspotDetection, LivePredictionResponse, MetricSource, RegionRisk, SentinelSceneStatus, WeatherSnapshot } from "../types";
+import { isAvailableWeatherDataStatus } from "../utils/risk";
 
 export const ENVIRONMENTAL_QUERY_KEY = ["environmental-intelligence"] as const;
 const ENVIRONMENTAL_STALE_MS = 60_000;
@@ -90,6 +91,11 @@ interface WeatherApiResponse {
   }>;
   retrieved_at?: string;
   cache?: { status: string; age_seconds: number };
+  quality?: {
+    valid?: boolean;
+    flags?: string[];
+    status?: MetricSource["dataStatus"];
+  };
   message?: string;
 }
 
@@ -164,20 +170,38 @@ function updatedMinutesAgo(retrievedAt?: string) {
   return minutes <= 1 ? "updated just now" : `updated ${minutes} min ago`;
 }
 
-function sourceFromWeather(response: WeatherApiResponse): MetricSource {
-  if (response.status !== "ok" || !response.current) {
+function weatherDataStatus(response: WeatherApiResponse): MetricSource["dataStatus"] {
+  return response.data_status ?? response.quality?.status ?? (response.cache?.status === "hit" ? "CACHED" : "LIVE");
+}
+
+function hasUsableWeatherCurrent(current?: WeatherApiResponse["current"]): current is NonNullable<WeatherApiResponse["current"]> {
+  return Boolean(
+    current &&
+      Number.isFinite(current.temperature) &&
+      Number.isFinite(current.humidity) &&
+      Number.isFinite(current.wind_speed) &&
+      Number.isFinite(current.rainfall)
+  );
+}
+
+export function isWeatherResponseUsable(response: WeatherApiResponse): response is WeatherApiResponse & { current: NonNullable<WeatherApiResponse["current"]> } {
+  return response.status === "ok" && response.quality?.valid !== false && isAvailableWeatherDataStatus(weatherDataStatus(response)) && hasUsableWeatherCurrent(response.current);
+}
+
+export function sourceFromWeather(response: WeatherApiResponse): MetricSource {
+  const dataStatus = weatherDataStatus(response);
+  if (!isWeatherResponseUsable(response)) {
     return {
       status: "unavailable",
       provider: response.provider ?? "Open-Meteo",
       sourceType: response.source_type ?? "forecast_model_current_conditions",
       location: response.location,
-      dataStatus: response.data_status ?? "UNAVAILABLE",
+      dataStatus: isAvailableWeatherDataStatus(dataStatus) ? dataStatus : "UNAVAILABLE",
       message: response.message ?? "Live weather temporarily unavailable"
     };
   }
-  const dataStatus = response.data_status ?? (response.cache?.status === "hit" ? "CACHED" : "LIVE");
   return {
-    status: dataStatus === "LIVE" ? "live" : dataStatus === "UNAVAILABLE" ? "unavailable" : "degraded",
+    status: dataStatus === "LIVE" ? "live" : "degraded",
     provider: response.provider,
     sourceType: response.source_type,
     observedAt: response.current.observed_at,
@@ -240,9 +264,9 @@ function sourceFromSentinel(scene?: SentinelSceneStatus, response?: SentinelStat
   };
 }
 
-function forecastFromWeather(response: WeatherApiResponse): WeatherSnapshot[] {
+export function forecastFromWeather(response: WeatherApiResponse): WeatherSnapshot[] {
   const hourly = response.hourly?.slice(0, 12) ?? [];
-  if (response.status !== "ok" || hourly.length === 0) return [];
+  if (!isWeatherResponseUsable(response) || hourly.length === 0) return [];
   return hourly.map((item) => ({
     label: new Date(item.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     temperature: Math.round(item.temperature_2m ?? 0),
@@ -273,7 +297,7 @@ async function loadLiveWeather(): Promise<{ regions: RegionRisk[]; weatherData: 
   const updatedRegions = regions.map((region) => {
     const weather = weatherByRegion.get(region.name);
     const source = weather ? sourceFromWeather(weather) : simulatedWeatherSource;
-    if (weather?.status === "ok" && weather.current) {
+    if (weather && isWeatherResponseUsable(weather)) {
       return {
         ...region,
         temperature: Math.round(weather.current.temperature),

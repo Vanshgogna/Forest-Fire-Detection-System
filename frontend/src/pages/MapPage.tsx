@@ -2,13 +2,14 @@ import { PageHeader } from "../components/common/PageHeader";
 import { GeographicRiskIntelligence } from "../components/maps/GeographicRiskIntelligence";
 import { useEnvironmentalContext } from "../contexts/EnvironmentalContext";
 import { useEnvironmentalData } from "../hooks/useEnvironmentalData";
+import { hasProviderData } from "../utils/risk";
 
 export function MapPage() {
   const { data, isLoading } = useEnvironmentalData();
   const { selectedRegionId } = useEnvironmentalContext();
   if (isLoading || !data) return <div className="loading-state">Loading GIS layers...</div>;
   const selectedRegion = data.regions.find((region) => region.id === selectedRegionId) ?? data.regions[0];
-  const weatherAvailable = selectedRegion.weatherSource?.status === "live" || selectedRegion.weatherSource?.status === "degraded";
+  const weatherAvailable = hasProviderData(selectedRegion.weatherSource?.status);
   const selectedWeatherData = weatherAvailable ? data.weatherDataByRegion?.[selectedRegionId] ?? data.weatherData : [];
 
   return (

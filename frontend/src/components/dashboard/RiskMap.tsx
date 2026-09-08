@@ -2,16 +2,12 @@ import { memo, useMemo } from "react";
 import { MapContainer, CircleMarker, TileLayer, Tooltip } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { RegionRisk } from "../../types";
-import { getRiskColor } from "../../utils/risk";
+import { getRiskColor, hasProviderData } from "../../utils/risk";
 import { useEnvironmentalContext } from "../../contexts/EnvironmentalContext";
 
 function riskText(region: RegionRisk) {
   if (region.riskStatus === "unavailable") return "Live prediction unavailable";
   return `Risk ${region.riskScore}%`;
-}
-
-function hasProviderData(status?: string) {
-  return status === "live" || status === "degraded";
 }
 
 function RiskMapComponent({ regions }: { regions: RegionRisk[] }) {
@@ -20,7 +16,7 @@ function RiskMapComponent({ regions }: { regions: RegionRisk[] }) {
     () =>
       regions.map((region) => ({
         ...region,
-        radius: 10 + (region.hotspotSource?.status === "live" ? region.hotspots : 0),
+        radius: 10 + (hasProviderData(region.hotspotSource?.status) ? region.hotspots : 0),
         color: region.riskStatus === "unavailable" ? "var(--muted)" : getRiskColor(region.riskLevel)
       })),
     [regions]

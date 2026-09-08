@@ -1,14 +1,10 @@
 import { memo, useMemo } from "react";
 import { RegionRisk } from "../../types";
-import { getRiskColor } from "../../utils/risk";
+import { getRiskColor, hasProviderData } from "../../utils/risk";
 
 function riskLabel(region: RegionRisk) {
   if (region.riskStatus === "unavailable") return "Unavailable";
   return `${region.riskLevel} · ${region.riskScore}`;
-}
-
-function hasProviderData(status?: string) {
-  return status === "live" || status === "degraded";
 }
 
 function RegionTableComponent({ regions }: { regions: RegionRisk[] }) {

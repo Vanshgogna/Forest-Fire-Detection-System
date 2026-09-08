@@ -8,6 +8,7 @@ import { RegionTable } from "../components/dashboard/RegionTable";
 import { RiskMap } from "../components/dashboard/RiskMap";
 import { useEnvironmentalData } from "../hooks/useEnvironmentalData";
 import { useEnvironmentalContext } from "../contexts/EnvironmentalContext";
+import { hasProviderData, sourceStatusLabel } from "../utils/risk";
 
 export function DashboardPage() {
   const { data, isLoading, isFetching } = useEnvironmentalData();
@@ -17,10 +18,10 @@ export function DashboardPage() {
   const selectedRegion = data.regions.find((region) => region.id === selectedRegionId) ?? data.regions[0];
   const selectedWeatherData = data.weatherDataByRegion?.[selectedRegion.id] ?? data.weatherData;
   const riskAvailable = selectedRegion.riskStatus !== "unavailable";
-  const vegetationAvailable = selectedRegion.vegetationSource?.status === "live" || selectedRegion.vegetationSource?.status === "degraded";
-  const hotspotAvailable = selectedRegion.hotspotSource?.status === "live";
+  const vegetationAvailable = hasProviderData(selectedRegion.vegetationSource?.status);
+  const hotspotAvailable = hasProviderData(selectedRegion.hotspotSource?.status);
   const weatherDetail = selectedRegion.weatherSource?.message ?? data.provenance.weather.message ?? data.provenance.weather.provider;
-  const weatherStatus = selectedRegion.weatherSource?.dataStatus ?? (selectedRegion.weatherSource?.status === "live" ? "LIVE" : "UNAVAILABLE");
+  const weatherStatus = sourceStatusLabel(selectedRegion.weatherSource);
   const hotspotDetail = selectedRegion.hotspotSource?.message ?? "Hotspot data unavailable";
   const riskDetail = selectedRegion.riskSource?.message ?? "Live prediction unavailable";
   const showingLiveAlerts = data.alerts.some((alert) => alert.source === "live_prediction");

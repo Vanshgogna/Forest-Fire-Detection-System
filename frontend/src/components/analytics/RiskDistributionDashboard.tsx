@@ -36,6 +36,7 @@ import { FeatureContribution, RegionRisk, TrendPoint, WeatherSnapshot } from "..
 import { useEnvironmentalContext } from "../../contexts/EnvironmentalContext";
 import { ENVIRONMENTAL_QUERY_KEY } from "../../hooks/useEnvironmentalData";
 import { buildRegionsCsv, downloadTextFile } from "../../utils/downloads";
+import { hasProviderData, sourceStatusLabel } from "../../utils/risk";
 
 interface RiskDistributionDashboardProps {
   regions: RegionRisk[];
@@ -65,12 +66,8 @@ function hasPrediction(region: RegionRisk) {
   return region.riskStatus !== "unavailable";
 }
 
-function hasProviderData(status?: string) {
-  return status === "live" || status === "degraded";
-}
-
 function sourceStatus(source?: RegionRisk["riskSource"]) {
-  return source?.dataStatus ?? (source?.status === "live" ? "LIVE" : "UNAVAILABLE");
+  return sourceStatusLabel(source);
 }
 
 function weatherText(region: RegionRisk, key: "temperature" | "humidity" | "windSpeed") {
@@ -198,7 +195,7 @@ export function RiskDistributionDashboard({ regions, trendData, weatherData }: R
   };
   const recommendations = rankedRegions.slice(0, 5).map((region) => {
     if (region.riskStatus === "unavailable") return `Review provider status for ${region.name} before operational action.`;
-    if (region.hotspotSource?.status === "live" && region.hotspots > 0) {
+    if (hasProviderData(region.hotspotSource?.status) && region.hotspots > 0) {
       return `Verify ${region.hotspots} active hotspot${region.hotspots === 1 ? "" : "s"} in ${region.name}.`;
     }
     return `Continue weather and vegetation monitoring for ${region.name}.`;

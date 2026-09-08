@@ -85,6 +85,8 @@ async function bundleFrontendModules() {
         export { SettingsPage } from "./src/pages/SettingsPage.tsx";
         export { AboutPage } from "./src/pages/AboutPage.tsx";
         export { NotFoundPage } from "./src/pages/NotFoundPage.tsx";
+        export { forecastFromWeather, isWeatherResponseUsable, sourceFromWeather } from "./src/hooks/useEnvironmentalData.ts";
+        export { hasProviderData, isAvailableWeatherDataStatus, sourceStatusLabel } from "./src/utils/risk.ts";
       `,
       resolveDir: frontendRoot,
       loader: "tsx"
@@ -166,6 +168,81 @@ describe("React page smoke tests", () => {
       assert.match(html, new RegExp(expectedText, "i"));
     });
   }
+});
+
+describe("weather availability mapping", () => {
+  const cachedWeather = {
+    status: "ok",
+    data_status: "CACHED",
+    provider: "open-meteo",
+    source_type: "forecast_model_current_conditions",
+    location: {
+      region: "Bandipur Tiger Reserve",
+      latitude: 11.667,
+      longitude: 76.629,
+      timezone: "Asia/Kolkata"
+    },
+    current: {
+      temperature: 27.8,
+      humidity: 49,
+      wind_speed: 17.6,
+      rainfall: 0,
+      observed_at: "2026-09-08T10:30",
+      retrieved_at: "2026-09-08T05:06:34Z",
+      fire_weather_risk_index: 50.65
+    },
+    hourly: [
+      {
+        time: "2026-09-08T10:00",
+        temperature_2m: 27.8,
+        relative_humidity_2m: 49,
+        wind_speed_10m: 17.6,
+        rain: 0
+      }
+    ],
+    quality: { valid: true, status: "CACHED" },
+    cache: { status: "hit", age_seconds: 282 }
+  };
+
+  test("cached weather is treated as available degraded data", () => {
+    assert.equal(bundledAppModule.isWeatherResponseUsable(cachedWeather), true);
+    assert.equal(bundledAppModule.isAvailableWeatherDataStatus("CACHED"), true);
+    assert.equal(bundledAppModule.hasProviderData("degraded"), true);
+
+    const source = bundledAppModule.sourceFromWeather(cachedWeather);
+    assert.equal(source.status, "degraded");
+    assert.equal(source.dataStatus, "CACHED");
+    assert.equal(bundledAppModule.sourceStatusLabel(source), "CACHED");
+
+    const forecast = bundledAppModule.forecastFromWeather(cachedWeather);
+    assert.equal(forecast.length, 1);
+    assert.equal(forecast[0].temperature, 28);
+    assert.equal(forecast[0].humidity, 49);
+  });
+
+  test("recent and stale weather statuses are accepted", () => {
+    assert.equal(bundledAppModule.isAvailableWeatherDataStatus("LIVE"), true);
+    assert.equal(bundledAppModule.isAvailableWeatherDataStatus("RECENT"), true);
+    assert.equal(bundledAppModule.isAvailableWeatherDataStatus("STALE"), true);
+    assert.equal(bundledAppModule.isAvailableWeatherDataStatus("UNAVAILABLE"), false);
+  });
+
+  test("invalid quality or unavailable status suppresses weather values", () => {
+    const invalidCachedWeather = { ...cachedWeather, quality: { valid: false, status: "CACHED" } };
+    assert.equal(bundledAppModule.isWeatherResponseUsable(invalidCachedWeather), false);
+    assert.equal(bundledAppModule.sourceFromWeather(invalidCachedWeather).status, "unavailable");
+    assert.equal(bundledAppModule.forecastFromWeather(invalidCachedWeather).length, 0);
+
+    const unavailableWeather = {
+      ...cachedWeather,
+      status: "unavailable",
+      data_status: "UNAVAILABLE",
+      current: undefined,
+      message: "Live weather temporarily unavailable"
+    };
+    assert.equal(bundledAppModule.isWeatherResponseUsable(unavailableWeather), false);
+    assert.equal(bundledAppModule.sourceFromWeather(unavailableWeather).dataStatus, "UNAVAILABLE");
+  });
 });
 
 describe("Explainability export report", () => {

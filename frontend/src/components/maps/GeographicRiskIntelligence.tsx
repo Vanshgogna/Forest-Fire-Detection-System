@@ -23,7 +23,7 @@ import {
 import { CircleMarker, MapContainer, Polygon, Popup, TileLayer, Tooltip } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { RegionRisk, TrendPoint, WeatherSnapshot } from "../../types";
-import { getRiskColor } from "../../utils/risk";
+import { getRiskColor, hasProviderData, sourceStatusLabel } from "../../utils/risk";
 import { useEnvironmentalContext } from "../../contexts/EnvironmentalContext";
 import { ENVIRONMENTAL_QUERY_KEY } from "../../hooks/useEnvironmentalData";
 import { buildRegionsCsv, buildRegionsGeoJson, downloadTextFile } from "../../utils/downloads";
@@ -68,10 +68,6 @@ function hasPrediction(region: RegionRisk) {
   return region.riskStatus !== "unavailable";
 }
 
-function hasProviderData(status?: string) {
-  return status === "live" || status === "degraded";
-}
-
 function riskText(region: RegionRisk) {
   return hasPrediction(region) ? `${region.riskScore}` : "Unavailable";
 }
@@ -89,7 +85,7 @@ export function GeographicRiskIntelligence({ regions, trendData, weatherData }: 
   const [intensity, setIntensity] = useState(84);
   const selectedRegion = useMemo(() => regions.find((region) => region.id === selectedRegionId) ?? regions[0], [regions, selectedRegionId]);
   const selectedWeatherAvailable = hasProviderData(selectedRegion.weatherSource?.status);
-  const selectedWeatherStatus = selectedRegion.weatherSource?.dataStatus ?? (selectedWeatherAvailable ? "LIVE" : "UNAVAILABLE");
+  const selectedWeatherStatus = sourceStatusLabel(selectedRegion.weatherSource);
   const rankedRegions = useMemo(() => [...regions].sort((a, b) => (hasPrediction(b) ? b.riskScore : -1) - (hasPrediction(a) ? a.riskScore : -1)), [regions]);
   const latestWeather = weatherData[0];
   const weatherOverlayAvailable = selectedWeatherAvailable && Boolean(latestWeather);

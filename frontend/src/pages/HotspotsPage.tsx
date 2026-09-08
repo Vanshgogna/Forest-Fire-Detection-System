@@ -6,6 +6,7 @@ import { PageHeader } from "../components/common/PageHeader";
 import { Panel } from "../components/common/Panel";
 import { useEnvironmentalData } from "../hooks/useEnvironmentalData";
 import { useEnvironmentalContext } from "../contexts/EnvironmentalContext";
+import { hasProviderData } from "../utils/risk";
 
 export function HotspotsPage() {
   const { data, isLoading } = useEnvironmentalData();
@@ -13,7 +14,7 @@ export function HotspotsPage() {
   if (isLoading || !data) return <div className="loading-state">Loading hotspot stream...</div>;
   const region = data.regions.find((item) => item.id === selectedRegionId) ?? data.regions[0];
   const hotspotDetail = region.hotspotSource?.message ?? data.provenance.hotspots.message ?? "Hotspot data unavailable";
-  const hotspotAvailable = region.hotspotSource?.status === "live";
+  const hotspotAvailable = hasProviderData(region.hotspotSource?.status);
   const sourceLabel = hotspotAvailable ? "FIRMS" : "Unavailable";
   const showingLiveAlerts = data.alerts.some((alert) => alert.source === "live_prediction");
   const selectedAlerts = data.alerts.filter((alert) => alert.region === region.name);

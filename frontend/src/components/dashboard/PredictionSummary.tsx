@@ -12,6 +12,7 @@ import {
 import { Link } from "react-router-dom";
 import { ENVIRONMENTAL_QUERY_KEY } from "../../hooks/useEnvironmentalData";
 import { RegionRisk, TrendPoint, WeatherSnapshot } from "../../types";
+import { hasProviderData } from "../../utils/risk";
 
 interface PredictionSummaryProps {
   regions: RegionRisk[];
@@ -29,11 +30,7 @@ function hasPrediction(region: RegionRisk) {
 }
 
 function hasVegetation(region: RegionRisk) {
-  return region.vegetationSource?.status === "live" || region.vegetationSource?.status === "degraded";
-}
-
-function hasWeather(source?: RegionRisk["weatherSource"]) {
-  return source?.status === "live" || source?.status === "degraded";
+  return hasProviderData(region.vegetationSource?.status);
 }
 
 function riskText(region: RegionRisk) {
@@ -56,16 +53,16 @@ export function PredictionSummary({ regions, trendData, weatherData, weatherSour
   }, [regions]);
   const { highestRiskRegion, overallRisk, confidence, avgNdvi } = summary;
   const latestWeather = weatherData[0];
-  const weatherAvailable = hasWeather(weatherSource) && Boolean(latestWeather);
+  const weatherAvailable = hasProviderData(weatherSource?.status) && Boolean(latestWeather);
   const weatherSourceDetail = weatherSource?.message ?? weatherSource?.provider ?? "source unavailable";
   const riskSourceDetail = highestRiskRegion.riskSource?.message ?? "Live prediction unavailable";
-  const highestWeatherAvailable = hasWeather(highestRiskRegion.weatherSource);
+  const highestWeatherAvailable = hasProviderData(highestRiskRegion.weatherSource?.status);
   const previousRisk = trendData[trendData.length - 2]?.risk ?? overallRisk;
   const latestRisk = trendData[trendData.length - 1]?.risk ?? overallRisk;
   const trendDelta = overallRisk === null || previousRisk === null || latestRisk === null ? 0 : latestRisk - previousRisk;
   const priorityAction = !hasPrediction(highestRiskRegion)
     ? `Monitor ${highestRiskRegion.name} as live prediction data becomes available.`
-    : highestRiskRegion.hotspotSource?.status === "live" && highestRiskRegion.hotspots > 0
+    : hasProviderData(highestRiskRegion.hotspotSource?.status) && highestRiskRegion.hotspots > 0
       ? `Verify ${highestRiskRegion.hotspots} active hotspot${highestRiskRegion.hotspots === 1 ? "" : "s"} in ${highestRiskRegion.name} and keep response teams on standby.`
       : `Monitor ${highestRiskRegion.name} and keep response teams ready for changing weather conditions.`;
   const gaugeStyle = useMemo(

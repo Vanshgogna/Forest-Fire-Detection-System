@@ -5,6 +5,7 @@ import { PageHeader } from "../components/common/PageHeader";
 import { Panel } from "../components/common/Panel";
 import { useEnvironmentalData } from "../hooks/useEnvironmentalData";
 import { useEnvironmentalContext } from "../contexts/EnvironmentalContext";
+import { hasProviderData, sourceStatusLabel } from "../utils/risk";
 
 export function WeatherPage() {
   const { data, isLoading } = useEnvironmentalData();
@@ -12,11 +13,11 @@ export function WeatherPage() {
   if (isLoading || !data) return <div className="loading-state">Loading weather intelligence...</div>;
   const region = data.regions.find((item) => item.id === selectedRegionId) ?? data.regions[0];
   const source = region.weatherSource ?? data.provenance.weather;
-  const dataStatus = source.dataStatus ?? (source.status === "live" ? "LIVE" : source.status === "unavailable" ? "UNAVAILABLE" : "SUSPICIOUS");
+  const dataStatus = sourceStatusLabel(source);
   const updatedDetail = source.message ?? "source timestamp unavailable";
   const locationName = source.location?.region ?? region.name;
   const coordinates = source.location ? `${source.location.latitude}, ${source.location.longitude}` : `${region.coordinates[0]}, ${region.coordinates[1]}`;
-  const weatherAvailable = source.status === "live" || source.status === "degraded";
+  const weatherAvailable = hasProviderData(source.status);
   const selectedWeatherData = weatherAvailable ? data.weatherDataByRegion?.[region.id] ?? data.weatherData : [];
 
   return (

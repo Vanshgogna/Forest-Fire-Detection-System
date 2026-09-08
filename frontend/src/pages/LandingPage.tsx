@@ -13,6 +13,7 @@ import {
 import { Link } from "react-router-dom";
 import { useEnvironmentalData } from "../hooks/useEnvironmentalData";
 import { RegionRisk } from "../types";
+import { hasProviderData } from "../utils/risk";
 
 function sourceLabel(source?: RegionRisk["weatherSource"]) {
   if (!source) return "UNAVAILABLE";
@@ -46,9 +47,9 @@ function previewCopy(region?: RegionRisk) {
     risk: hasPrediction ? String(region.riskScore) : "--",
     category: hasPrediction ? `${region.riskLevel} risk` : "Prediction unavailable",
     confidence: hasPrediction ? `${region.confidence}% confidence` : "Unavailable",
-    ndvi: region.vegetationSource?.status === "live" || region.vegetationSource?.status === "degraded" ? formatMetric(region.ndvi, 3) : "--",
+    ndvi: hasProviderData(region.vegetationSource?.status) ? formatMetric(region.ndvi, 3) : "--",
     nbr: hasPrediction ? formatMetric(region.nbr, 3) : "--",
-    hotspots: region.hotspotSource?.status === "live" || region.hotspotSource?.status === "degraded" ? String(region.hotspots) : "--",
+    hotspots: hasProviderData(region.hotspotSource?.status) ? String(region.hotspots) : "--",
     weather: sourceLabel(region.weatherSource),
     vegetation: sourceLabel(region.vegetationSource),
     hotspot: sourceLabel(region.hotspotSource),

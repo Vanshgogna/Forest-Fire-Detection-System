@@ -1,4 +1,5 @@
 import { RegionRisk, WeatherSnapshot } from "../types";
+import { hasProviderData } from "./risk";
 
 export function safeFileNamePart(value: string) {
   return value
@@ -50,9 +51,9 @@ export function buildRegionsCsv(regions: RegionRisk[], weatherData: WeatherSnaps
       region.humidity,
       region.windSpeed,
       region.rainfall,
-      region.vegetationSource?.status === "live" || region.vegetationSource?.status === "degraded" ? region.ndvi : "Unavailable",
+      hasProviderData(region.vegetationSource?.status) ? region.ndvi : "Unavailable",
       region.riskStatus === "unavailable" ? "Unavailable" : region.nbr,
-      region.hotspotSource?.status === "live" || region.hotspotSource?.status === "degraded" ? region.hotspots : "Unavailable",
+      hasProviderData(region.hotspotSource?.status) ? region.hotspots : "Unavailable",
       region.weatherSource?.dataStatus ?? "UNAVAILABLE",
       region.vegetationSource?.dataStatus ?? "UNAVAILABLE",
       region.hotspotSource?.dataStatus ?? "UNAVAILABLE",
@@ -74,9 +75,9 @@ export function buildRegionsGeoJson(regions: RegionRisk[]) {
         riskScore: region.riskStatus === "unavailable" ? null : region.riskScore,
         riskLevel: region.riskStatus === "unavailable" ? null : region.riskLevel,
         confidence: region.riskStatus === "unavailable" ? null : region.confidence,
-        ndvi: region.vegetationSource?.status === "live" || region.vegetationSource?.status === "degraded" ? region.ndvi : null,
+        ndvi: hasProviderData(region.vegetationSource?.status) ? region.ndvi : null,
         nbr: region.riskStatus === "unavailable" ? null : region.nbr,
-        hotspots: region.hotspotSource?.status === "live" || region.hotspotSource?.status === "degraded" ? region.hotspots : null,
+        hotspots: hasProviderData(region.hotspotSource?.status) ? region.hotspots : null,
         weatherStatus: region.weatherSource?.dataStatus ?? "UNAVAILABLE",
         vegetationStatus: region.vegetationSource?.dataStatus ?? "UNAVAILABLE",
         hotspotStatus: region.hotspotSource?.dataStatus ?? "UNAVAILABLE"
