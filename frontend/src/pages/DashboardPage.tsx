@@ -16,7 +16,6 @@ export function DashboardPage() {
   if (isLoading || !data) return <div className="loading-state">Loading environmental intelligence...</div>;
 
   const selectedRegion = data.regions.find((region) => region.id === selectedRegionId) ?? data.regions[0];
-  const selectedWeatherData = data.weatherDataByRegion?.[selectedRegion.id] ?? data.weatherData;
   const riskAvailable = selectedRegion.riskStatus !== "unavailable";
   const vegetationAvailable = hasProviderData(selectedRegion.vegetationSource?.status);
   const hotspotAvailable = hasProviderData(selectedRegion.hotspotSource?.status);
@@ -40,7 +39,7 @@ export function DashboardPage() {
         <MetricCard label="Active Hotspots" value={hotspotAvailable ? `${selectedRegion.hotspots}` : "Unavailable"} detail={hotspotDetail} trend="flat" icon={AlertTriangle} tone="danger" />
         <MetricCard label="Weather Source" value={weatherStatus} detail={weatherDetail} trend="flat" icon={Satellite} tone={weatherStatus === "LIVE" ? "success" : weatherStatus === "UNAVAILABLE" ? "warning" : "neutral"} />
       </section>
-      <PredictionSummary regions={[selectedRegion]} trendData={data.trendData} weatherData={selectedWeatherData} weatherSource={selectedRegion.weatherSource ?? data.provenance.weather} />
+      <PredictionSummary regions={[selectedRegion]} trendData={data.trendData} weatherSource={selectedRegion.weatherSource ?? data.provenance.weather} />
       <section className="dashboard-grid">
         <Panel title="GIS Risk Surface" subtitle={`${selectedRegion.name} in context with monitored forest regions`}>
           <RiskMap regions={data.regions} />

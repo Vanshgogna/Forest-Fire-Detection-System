@@ -11,13 +11,12 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { ENVIRONMENTAL_QUERY_KEY } from "../../hooks/useEnvironmentalData";
-import { RegionRisk, TrendPoint, WeatherSnapshot } from "../../types";
+import { RegionRisk, TrendPoint } from "../../types";
 import { hasProviderData } from "../../utils/risk";
 
 interface PredictionSummaryProps {
   regions: RegionRisk[];
   trendData: TrendPoint[];
-  weatherData: WeatherSnapshot[];
   weatherSource?: RegionRisk["weatherSource"];
 }
 
@@ -37,7 +36,7 @@ function riskText(region: RegionRisk) {
   return hasPrediction(region) ? `${region.riskScore}` : "Unavailable";
 }
 
-export function PredictionSummary({ regions, trendData, weatherData, weatherSource }: PredictionSummaryProps) {
+export function PredictionSummary({ regions, trendData, weatherSource }: PredictionSummaryProps) {
   const queryClient = useQueryClient();
   const summary = useMemo(() => {
     const predictedRegions = regions.filter(hasPrediction);
@@ -52,11 +51,9 @@ export function PredictionSummary({ regions, trendData, weatherData, weatherSour
     };
   }, [regions]);
   const { highestRiskRegion, overallRisk, confidence, avgNdvi } = summary;
-  const latestWeather = weatherData[0];
-  const weatherAvailable = hasProviderData(weatherSource?.status) && Boolean(latestWeather);
+  const weatherAvailable = hasProviderData(highestRiskRegion.weatherSource?.status ?? weatherSource?.status);
   const weatherSourceDetail = weatherSource?.message ?? weatherSource?.provider ?? "source unavailable";
   const riskSourceDetail = highestRiskRegion.riskSource?.message ?? "Live prediction unavailable";
-  const highestWeatherAvailable = hasProviderData(highestRiskRegion.weatherSource?.status);
   const previousRisk = trendData[trendData.length - 2]?.risk ?? overallRisk;
   const latestRisk = trendData[trendData.length - 1]?.risk ?? overallRisk;
   const trendDelta = overallRisk === null || previousRisk === null || latestRisk === null ? 0 : latestRisk - previousRisk;
@@ -133,8 +130,6 @@ export function PredictionSummary({ regions, trendData, weatherData, weatherSour
             <div className="highest-region-metrics">
               <span>Risk {riskText(highestRiskRegion)}</span>
               <span>Confidence {hasPrediction(highestRiskRegion) ? `${highestRiskRegion.confidence}%` : "Unavailable"}</span>
-              <span>{highestWeatherAvailable ? `${highestRiskRegion.temperature}°C` : "Weather unavailable"}</span>
-              <span>{highestWeatherAvailable ? `${highestRiskRegion.humidity}% humidity` : "Humidity unavailable"}</span>
             </div>
             <Link className="button secondary" to="/map">Open GIS Map <ArrowRight size={16} /></Link>
           </div>
@@ -146,9 +141,9 @@ export function PredictionSummary({ regions, trendData, weatherData, weatherSour
             <span>Key inputs</span>
           </div>
           <div className="condition-list">
-            <span><strong>{weatherAvailable ? `${latestWeather?.temperature}°C` : "--"}</strong>Temperature</span>
-            <span><strong>{weatherAvailable ? `${latestWeather?.humidity}%` : "--"}</strong>Humidity</span>
-            <span><strong>{weatherAvailable ? latestWeather?.wind : "--"}</strong>km/h wind</span>
+            <span><strong>{weatherAvailable ? `${highestRiskRegion.temperature}°C` : "--"}</strong>Temperature</span>
+            <span><strong>{weatherAvailable ? `${highestRiskRegion.humidity}%` : "--"}</strong>Humidity</span>
+            <span><strong>{weatherAvailable ? highestRiskRegion.windSpeed : "--"}</strong>km/h wind</span>
             <span><strong>{avgNdvi ?? "--"}</strong>Average NDVI</span>
           </div>
           <p><Leaf size={15} /> {highestRiskRegion.vegetationSource?.message ?? "Vegetation source unavailable."}</p>
